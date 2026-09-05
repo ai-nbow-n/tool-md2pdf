@@ -1,2 +1,4 @@
 .venv/
 data/output/
+apikey.txt
+__pycache__/

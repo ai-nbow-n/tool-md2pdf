@@ -30,7 +30,6 @@ from pathlib import Path
 
 PAGE_CSS = """
 @page {
-    size: A4;
     margin: 2cm 2.2cm 2cm 2.2cm;
 }
 
@@ -190,8 +189,65 @@ blockquote { border-left-color: #555; background: #f5f5f0; color: #222; }
 code, pre { font-family: "Courier New", Courier, monospace; }
 """
 
-# Page heights in mm — used to compute Mermaid diagram scaling limit
+PAGE_CSS_PLAIN = ""  # plain = base CSS only, no layout overrides
+
+PAGE_CSS_ARTICLE = """
+/* Two-column layout; tables, diagrams, and section headings span both columns */
+body   { columns: 2; column-gap: 1.2cm; column-fill: balance; }
+h1, h2, hr, table, .mermaid, pre { column-span: all; }
+"""
+
+PAGE_CSS_BEAMER = """
+/* Landscape @page is injected via _overrides based on selected page size */
+body { font-size: 11pt; line-height: 1.5; }
+
+.slide             { page-break-before: always; }
+.slide:first-child { page-break-before: auto; }
+
+/* Title slide */
+.title-slide {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 13cm;
+    text-align: center;
+    padding: 2cm 1cm;
+}
+.title-slide h1 {
+    font-size: 30pt;
+    color: #1a3a5c;
+    border-bottom: 3pt solid #1a3a5c;
+    padding-bottom: 14pt;
+    margin-bottom: 10pt;
+}
+.title-slide p, .title-slide strong { font-size: 13pt; color: #555; }
+
+/* Slide section header */
+.slide h2 {
+    font-size: 20pt;
+    background: #1a3a5c;
+    color: #fff;
+    padding: 8pt 12pt;
+    border: none;
+    margin: 0 0 14pt;
+    page-break-after: avoid;
+}
+
+/* Table of contents slide */
+.toc-list { font-size: 13pt; line-height: 2; margin: 8pt 0 0 18pt; }
+
+.slide h3 { font-size: 13pt; color: #2a5a8c; }
+"""
+
+# Page dimensions in mm — used for viewport sizing and Mermaid scaling
+_PAGE_WIDTH_MM:  dict[str, float] = {"A2": 420, "A4": 210, "A6": 105}
 _PAGE_HEIGHT_MM: dict[str, float] = {"A2": 594, "A4": 297, "A6": 148}
+
+
+def _page_dimensions(page_size: str, doc_style: str) -> tuple[float, float]:
+    width, height = _PAGE_WIDTH_MM[page_size], _PAGE_HEIGHT_MM[page_size]
+    return (height, width) if doc_style == "beamer" else (width, height)
 
 # ─── Mermaid.js CDN and init script ──────────────────────────────────────────
 
@@ -244,7 +300,38 @@ def _protect_mermaid_blocks(md_text: str) -> tuple[str, dict[str, str]]:
     return text, blocks
 
 
-def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4") -> str:
+def _transform_beamer(body: str) -> str:
+    """Split HTML body into slide divs at each <h2> boundary, prepend TOC slide."""
+    parts    = re.split(r'(?=<h2[\s>])', body)
+    intro    = parts[0]
+    sections = parts[1:]
+
+    toc_items = [
+        m.group(1)
+        for s in sections
+        for m in [re.match(r'<h2[^>]*>(.*?)</h2>', s, re.DOTALL)]
+        if m
+    ]
+
+    slides = [f'<div class="slide title-slide">{intro}</div>']
+
+    if toc_items:
+        toc_li = ''.join(f'<li>{t}</li>' for t in toc_items)
+        slides.append(
+            '<div class="slide toc-slide">'
+            '<h2>Contents</h2>'
+            f'<ol class="toc-list">{toc_li}</ol>'
+            '</div>'
+        )
+
+    for section in sections:
+        if section.strip():
+            slides.append(f'<div class="slide">{section}</div>')
+
+    return '\n'.join(slides)
+
+
+def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain") -> str:
     """Convert Markdown source to a complete HTML document string."""
     try:
         import markdown
@@ -267,15 +354,23 @@ def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: 
         body = body.replace(f"<p>{key}</p>", block)
         body = body.replace(key, block)
 
+    if doc_style == "beamer":
+        body = _transform_beamer(body)
+
     mermaid_script = f'<script src="{MERMAID_CDN}"></script>' if use_cdn else ""
     mermaid_init = MERMAID_INIT if (mermaid_map or use_cdn) else ""
 
-    _extra = {"serif": PAGE_CSS_SERIF, "typewriter": PAGE_CSS_TYPEWRITER}.get(font_style, "")
-    _overrides = ""
-    if font_size != "10":
-        _overrides += f"\nbody {{ font-size: {font_size}pt; }}"
-    if page_size != "A4":
-        _overrides += f"\n@page {{ size: {page_size}; margin: 2cm 2.2cm 2cm 2.2cm; }}"
+    _font_extra  = {"serif": PAGE_CSS_SERIF, "typewriter": PAGE_CSS_TYPEWRITER}.get(font_style, "")
+    _style_extra = {"article": PAGE_CSS_ARTICLE, "beamer": PAGE_CSS_BEAMER}.get(doc_style, "")
+    _extra = _font_extra + _style_extra
+    width, height = _page_dimensions(page_size, doc_style)
+    # Explicit dimensions also support A2, which Chromium's named paper sizes omit.
+    margins = "1.5cm 2cm" if doc_style == "beamer" else "2cm 2.2cm"
+    _overrides = f"\n@page {{ size: {width}mm {height}mm; margin: {margins}; }}"
+    _overrides += f"\nbody {{ font-size: {font_size}pt; }}"
+    if doc_style == "beamer":
+        # Keep the title slide within even the smallest selected paper size.
+        _overrides += f"\n.title-slide {{ min-height: {height - 30}mm; padding: 5mm; }}"
     return HTML_TEMPLATE.format(
         title=title,
         mermaid_script=mermaid_script,
@@ -298,7 +393,32 @@ def _wait_for_mermaid_js() -> str:
     """
 
 
-def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4") -> None:
+def _fit_diagrams(page, page_size: str, doc_style: str) -> None:
+    """Fit each complete diagram within both printable dimensions, preserving aspect ratio."""
+    width, height = _page_dimensions(page_size, doc_style)
+    horizontal_margin = 40 if doc_style == "beamer" else 44
+    vertical_margin = 30 if doc_style == "beamer" else 40
+    page.evaluate("""({maxWidth, maxHeight}) => {
+        document.querySelectorAll('.mermaid svg').forEach(svg => {
+            const vb = svg.viewBox?.baseVal;
+            if (!vb || vb.height <= 0 || vb.width <= 0) return;
+            const containerWidth = svg.parentElement.getBoundingClientRect().width;
+            const availableWidth = Math.min(maxWidth, containerWidth || maxWidth);
+            const scale = Math.min(1, availableWidth / vb.width, maxHeight / vb.height);
+            svg.style.height = (vb.height * scale) + 'px';
+            svg.style.width = (vb.width * scale) + 'px';
+            svg.style.maxWidth = '100%';
+            svg.style.display = 'block';
+            svg.style.margin = '0 auto';
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            svg.removeAttribute('width');
+            svg.removeAttribute('height');
+        });
+    }""", {"maxWidth": (width - horizontal_margin) / 25.4 * 96 - 16,
+            "maxHeight": (height - vertical_margin) / 25.4 * 96 - 65})
+
+
+def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain") -> None:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -308,13 +428,22 @@ def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font
         )
 
     md_text = input_path.read_text(encoding="utf-8")
-    html = md_to_html(md_text, title=input_path.stem, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size)
+    html = md_to_html(md_text, title=input_path.stem, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page()
+
+        # Match viewport to paper so content fills the full width (critical for A2)
+        width, height = _page_dimensions(page_size, doc_style)
+        _vw = int(width / 25.4 * 96)
+        _vh = int(height / 25.4 * 96)
+        page.set_viewport_size({"width": _vw, "height": _vh})
+
+        # Layout in print media so @page { size } controls the content column width
+        page.emulate_media(media="print")
 
         # Load HTML; wait for network (fetches Mermaid CDN) to go idle
         page.set_content(html, wait_until="networkidle", timeout=30_000)
@@ -326,28 +455,14 @@ def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font
             # Diagrams may not have rendered; continue anyway
             pass
 
-        # Scale oversized diagrams to fit one page; inline style beats CSS height:auto
-        _max_h = int((_PAGE_HEIGHT_MM.get(page_size, 297) - 40) / 25.4 * 96 - 65)
-        page.evaluate(f"""
-            () => {{
-                const MAX_H = {_max_h};
-                document.querySelectorAll('.mermaid svg').forEach(svg => {{
-                    const vb = svg.viewBox?.baseVal;
-                    if (!vb || vb.height <= 0 || vb.width <= 0) return;
-                    const scale = vb.height > MAX_H ? MAX_H / vb.height : 1;
-                    svg.style.height   = Math.floor(vb.height * scale) + 'px';
-                    svg.style.width    = Math.floor(vb.width  * scale) + 'px';
-                    svg.style.removeProperty('max-width');
-                    svg.removeAttribute('width');
-                }});
-            }}
-        """)
+        _fit_diagrams(page, page_size, doc_style)
 
         page.pdf(
             path=str(output_path),
-            format=page_size,
+            width=f"{width}mm",
+            height=f"{height}mm",
+            prefer_css_page_size=True,
             print_background=True,
-            margin={"top": "2cm", "right": "2.2cm", "bottom": "2cm", "left": "2.2cm"},
         )
         browser.close()
 
@@ -409,6 +524,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="A4",
         help="PDF page size (default: A4)",
     )
+    parser.add_argument(
+        "--doc-style",
+        choices=["plain", "article", "beamer"],
+        default="plain",
+        help="Document style: plain (default), article (two-column), beamer (landscape slides)",
+    )
     return parser
 
 
@@ -422,6 +543,7 @@ def main() -> None:
     font_style = args.font_style
     font_size  = args.font_size
     page_size  = args.page_size
+    doc_style  = args.doc_style
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -443,7 +565,7 @@ def main() -> None:
         out = output_dir / f.with_suffix(".pdf").name
         t0 = time.monotonic()
         try:
-            convert_file(f, out, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size)
+            convert_file(f, out, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style)
             elapsed = time.monotonic() - t0
             print(f"  OK  {f.name}  ->  {out.name}  ({elapsed:.1f}s)")
         except Exception as exc:

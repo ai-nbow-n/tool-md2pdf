@@ -1,183 +1,198 @@
-# Viaje München → Sofía — Agosto 2026
+# Eurotrip München → Sofía — Agosto 2026
 
-**Ruta:** München · Viena · Budapest · Belgrado · Sofía
-**Duración:** 7 días (3–9 agosto 2026)
-**Viajeros:** 2 personas
+**Duración:** 31 días, del 1 al 31 de agosto de 2026; 30 noches.
+**Viajeros:** 2 personas.
+**Países:** Alemania, Austria, Eslovaquia, Chequia, Hungría, Rumanía y Bulgaria.
+**Inicio:** München. **Final:** Sofía, sin regreso incluido.
+**Condición:** sin visitas ni tránsito por Serbia; entrada a Bulgaria por Rumanía y el corredor Giurgiu–Ruse.
+
+> Propuesta de viaje, sin reservas confirmadas. Se conserva agosto de 2026 del original y se amplía al mes completo. Los bloques de transporte y presupuestos son objetivos de planificación, no horarios ni precios confirmados.
 
 ---
 
-## Ruta general
+## Ruta general con retornos
+
+München → Linz → Viena → Bratislava → Viena → Brno → Praga → Brno → Bratislava → Budapest → Bratislava → Budapest → Brașov → Bucarest → Ruse → Veliko Tarnovo → Sofía → Plovdiv → Sofía.
+
+Las visitas repetidas tienen objetivos diferentes: Viena pasa del paseo urbano a los museos; Bratislava combina casco antiguo, excursión y descanso; Budapest separa Pest, Buda y la preparación del nocturno. Sofía abre y cierra el circuito búlgaro.
 
 ```mermaid
 graph LR
-  MUC["München / 3 ago"] --> VIE["Viena / 3-4 ago"]
-  VIE --> BUD["Budapest / 5-6 ago"]
-  BUD --> BEG["Belgrado / 7 ago"]
-  BEG --> SOF["Sofia / 8-9 ago"]
+  M["Munchen / 1 ago"] -->|"2 ago"| L["Linz / 2-3 ago"]
+  L -->|"4 ago"| V["Viena / 4-6, 7-8 ago"]
+  V -->|"7 ago"| B["Bratislava / 7, 14-15 y 19 ago"]
+  B -->|"8 ago"| V
+  V -->|"9 ago"| N["Brno / 9 y 13 ago"]
+  N -->|"10 ago"| P["Praga / 10-12 ago"]
+  P -->|"13 ago"| N
+  N -->|"14 ago"| B
+  B -->|"16 y 20 ago"| U["Budapest / 16-18 y 20-21 ago"]
+  U -->|"19 ago"| B
+  U -->|"Nocturno / 21-22 ago"| R["Brasov / 22-23 ago"]
+  R -->|"24 ago"| C["Bucarest / 24-25 ago"]
+  C -->|"26 ago / via Giurgiu"| D["Ruse / 26 ago"]
+  D -->|"27 ago"| T["Veliko Tarnovo / 27 ago"]
+  T -->|"28 ago"| S["Sofia / 28 y 31 ago"]
+  S -->|"29 ago"| Pl["Plovdiv / 29-30 ago"]
+  Pl -->|"31 ago"| S
 ```
 
----
-
-## Transporte
-
-| Tramo | Medio | Salida | Llegada | Duracion |
-|-------|-------|--------|---------|----------|
-| München Hbf - Wien Hbf | EC 113 (tren) | 3 ago 08:32 | 3 ago 12:43 | 4h 11m |
-| Wien Hbf - Budapest-Keleti | RJ 65 (tren) | 5 ago 09:05 | 5 ago 12:40 | 3h 35m |
-| Budapest-Nepliget - Beograd BAS | FlixBus (autobus) | 7 ago 07:30 | 7 ago 15:00 | 7h 30m |
-| Beograd - Sofia | Heberg Bus (autobus) | 8 ago 08:00 | 8 ago 14:30 | 6h 30m |
-
----
-
-## Alojamiento
-
-| Ciudad | Alojamiento | Check-in | Check-out | Precio |
-|--------|-------------|----------|-----------|--------|
-| Viena | Hotel Metropol Vienna - Florianigasse 39, 1080 Wien | 3 ago 15:00 | 5 ago 11:00 | 210 EUR |
-| Budapest | Central Hostel Budapest - Kiraly utca 18, 1061 Budapest | 5 ago 14:00 | 7 ago 10:00 | 95 EUR |
-| Belgrado | Green Studio Belgrade - Knez Mihailova 28, 11000 Beograd | 7 ago 16:00 | 8 ago 09:00 | 65 EUR |
-| Sofia | Hotel Niky - ul. Neofit Rilski 16, 1000 Sofia | 8 ago 16:00 | 9 ago 12:00 | 88 EUR |
+Un único mapa reúne todo el mes. Cada ciudad aparece una vez; las fechas de las flechas indican el orden de los desplazamientos y los regresos. El diagrama se reduce proporcionalmente para caber completo en el área imprimible del PDF.
 
 ---
 
 ## Itinerario diario
 
-### Dia 1 — Domingo 3 ago: München - Viena
+Las visitas interiores quedan sujetas a apertura y entradas disponibles. En días de traslado, reservar la mañana principalmente al transporte y evitar entradas con hora fija inmediatamente después de llegar.
 
-**Manana**
-- 08:32 Salida desde München Hauptbahnhof, tren EC 113
-- 12:43 Llegada a Wien Hauptbahnhof
+### Semana 1 — Alpes y primer retorno
 
-**Tarde**
-- Check-in Hotel Metropol (desde las 15:00)
-- Paseo por el Innere Stadt: Stephansplatz, Graben, Kohlmarkt
-- Visita al Palacio Hofburg (entrada libre a los patios)
+| Día y fecha | Mañana | Tarde y noche | Dormir en |
+|-------------|--------|---------------|-----------|
+| 1 · sáb 1 ago | Inicio en München y Marienplatz. | Viktualienmarkt y Englischer Garten. | München |
+| 2 · dom 2 ago | Viaje directo a Linz desde München. | Paseo por la ciudad, casco antiguo y Danubio. | Linz |
+| 3 · lun 3 ago | Linz: casco antiguo y orilla del Danubio. | Ars Electronica Center o Pöstlingberg. | Linz |
+| 4 · mar 4 ago | Tren a Viena y dejar equipaje. | Stephansplatz, Graben y patios del Hofburg. | Viena I |
+| 5 · mié 5 ago | Museos: Kunsthistorisches o Belvedere. | Spittelberg y cafés. | Viena I |
+| 6 · jue 6 ago | Schönbrunn: elegir palacio o jardines. | Paseo y descanso. | Viena I |
+| 7 · vie 7 ago | Viena → Bratislava. | Casco antiguo y paseo hacia el castillo. | Bratislava I |
+### Semana 2 — Chequia y Bratislava otra vez
 
-**Noche**
-- Cena en el Naschmarkt o en el barrio de Mariahilfer
+| Día y fecha | Mañana | Tarde y noche | Dormir en |
+|-------------|--------|---------------|-----------|
+| 8 · sáb 8 ago | Viena → Brno. | Plaza de la Libertad y paseo por Špilberk. | Brno I |
+| 9 · dom 9 ago | Brno → Praga. | Ciudad Vieja y ribera del Moldava. | Praga |
+| 10 · lun 10 ago | Puente de Carlos temprano y Malá Strana. | Recinto del Castillo de Praga. | Praga |
+| 11 · mar 11 ago | Vyšehrad y paseo por el río. | Lavandería, cafés y medio día libre. | Praga |
+| 12 · mié 12 ago | Praga → Brno. | Arquitectura y parques; Villa Tugendhat solo con reserva disponible. | Brno II |
+| 13 · jue 13 ago | Brno → Bratislava. | Ribera del Danubio y calles fuera del primer recorrido. | Bratislava II |
+| 14 · vie 14 ago | Excursión local a Devín, con transporte por confirmar. | Regreso a Bratislava y descanso. | Bratislava II |
 
-> **Nota:** Reservar billetes de tren con antelacion en oebb.at — precio estimado 29-49 EUR/persona con Rail & Go.
+### Semana 3 — Budapest, otro zigzag y Rumanía
 
----
+| Día y fecha | Mañana | Tarde y noche | Dormir en |
+|-------------|--------|---------------|-----------|
+| 15 · sáb 15 ago | Bratislava → Budapest. | Pest y barrio de Erzsébetváros. | Budapest I |
+| 16 · dom 16 ago | Buda: barrio del castillo y miradores. | Danubio e isla Margarita. | Budapest I |
+| 17 · lun 17 ago | Baños termales, con entrada por comprobar. | Parque de la Ciudad y cena tranquila. | Budapest I |
+| 18 · mar 18 ago | Budapest → Bratislava: vuelta al oeste. | Repetir el lugar favorito o descansar toda la tarde. | Bratislava III |
+| 19 · mié 19 ago | Bratislava → Budapest otra vez. | Llegada tranquila y provisiones para el tramo rumano. | Budapest II |
+| 20 · jue 20 ago | Budapest sin agenda rígida; equipaje en consigna. | Tren nocturno hacia Brașov, sujeto a servicio y reserva de litera. | Tren nocturno |
+| 21 · vie 21 ago | Llegada a Brașov y descanso. | Piața Sfatului y casco antiguo; sin excursiones largas. | Brașov |
 
-### Dia 2 — Lunes 4 ago: Viena
+### Últimos diez días — Rumanía y Bulgaria
 
-**Manana**
-- Visita al Kunsthistorisches Museum (9:00–18:00, 21 EUR)
-- Paseo por los Jardines del Belvedere
-
-**Tarde**
-- Palacio Schonbrunn y jardines (entrada exterior gratuita)
-- Barrio de Spittelberg: tiendas de artesania y cafes
-
-**Noche**
-- Opera Estatal de Viena (entradas de pie desde 3 EUR, venta 80 min antes)
-
----
-
-### Dia 3 — Martes 5 ago: Viena - Budapest
-
-**Manana**
-- 09:05 Salida Wien Hbf, tren RJ 65
-- 12:40 Llegada Budapest-Keleti
-- Check-in hostal en el distrito VII (barrio judio)
-
-**Tarde**
-- Gran Sinagoga de Dohany utca (la mayor de Europa)
-- Paseo por el Mercado Central (Nagy Vasarcsarnok)
-- Cruce del Puente de las Cadenas a pie
-
-**Noche**
-- Barrio de los ruin bars: Szimpla Kert y alrededores
-
----
-
-### Dia 4 — Miercoles 6 ago: Budapest
-
-**Manana**
-- Castillo de Buda y Bastion de los Pescadores (vistas panoramicas)
-- Iglesia de Matias
-
-**Tarde**
-- Banos termales Szechenyi (entrada 22 EUR, llevar banador)
-- Isla Margarita: parque y fuente musical
-
-**Noche**
-- Cena en el barrio de Erzsebetvaros
-
-> **Consejo:** Comprar tarjeta Budapest Card 48h (45 EUR) — incluye transporte y descuentos en museos.
+| Día y fecha | Mañana | Tarde y noche | Dormir en |
+|-------------|--------|---------------|-----------|
+| 22 · sáb 22 ago | Brașov y entorno de Tâmpa según clima y energía. | Visita cultural opcional y descanso. | Brașov |
+| 23 · dom 23 ago | Brașov → Bucarest. | Llegada al alojamiento y paseo corto. | Bucarest |
+| 24 · lun 24 ago | Calea Victoriei y parques. | Museo según apertura y preparar el cruce internacional. | Bucarest |
+| 25 · mar 25 ago | Bucarest → Ruse por Giurgiu; dejar margen para el viaje. | Centro de Ruse y ribera si la llegada lo permite. | Ruse |
+| 26 · mié 26 ago | Ruse → Veliko Tarnovo. | Casco antiguo y miradores; Tsarevets si queda tiempo. | Veliko Tarnovo |
+| 27 · jue 27 ago | Veliko Tarnovo → Sofía; día principalmente de transporte. | Primera visita breve: Alexander Nevsky y centro. | Sofía I |
+| 28 · vie 28 ago | Sofía → Plovdiv: desvío al este. | Kapana y casco antiguo. | Plovdiv |
+| 29 · sáb 29 ago | Calles históricas y teatro romano si se visita. | Tarde libre y cena sin prisas. | Plovdiv |
+| 30 · dom 30 ago | Plovdiv → Sofía: último regreso. | Rotonda de San Jorge, Vitosha Boulevard y cena de cierre. | Sofía II |
+| 31 · lun 31 ago | Desayuno tranquilo y último paseo. | Recoger equipaje y finalizar el eurotrip en Sofía. | Sin noche incluida |
 
 ---
 
-### Dia 5 — Jueves 7 ago: Budapest - Belgrado
+## Transporte
 
-**Manana**
-- 07:30 Salida Budapest Nepliget (estacion de autobuses), FlixBus
-- 15:00 Llegada Beograd BAS
+Los bloques indican **tiempo reservado en la agenda**, incluyendo accesos, esperas y enlaces. No son duraciones publicadas ni garantizan conexiones directas.
 
-**Tarde**
-- Check-in Green Studio
-- Fortaleza de Kalemegdan y confluencia de los rios Sava y Danubio
-- Calle Knez Mihailova (peatonal)
+| Fecha | Tramo | Medio previsto | Bloque de agenda |
+|-------|-------|----------------|------------------|
+| 2 ago | München → Linz | Tren | Media jornada |
+| 4 ago | Linz → Viena | Tren | Media jornada |
+| 6 y 7 ago | Viena → Bratislava → Viena | Tren, un tramo cada día | Mañana de cada día |
+| 8 ago | Viena → Brno | Tren | Media jornada |
+| 9 y 12 ago | Brno → Praga → Brno | Tren, en fechas separadas | Media jornada por tramo |
+| 13 ago | Brno → Bratislava | Tren | Media jornada |
+| 15, 18 y 19 ago | Bratislava → Budapest → Bratislava → Budapest | Tren, un tramo por fecha | Media jornada por tramo |
+| 20–21 ago | Budapest → Brașov | Tren nocturno, reservar cama o litera | Noche del 20 y mañana del 21 |
+| 23 ago | Brașov → Bucarest | Tren | Media jornada con margen |
+| 25 ago | Bucarest → Ruse vía Giurgiu | Tren internacional o autobús de recorrido verificado | Jornada libre hasta llegar |
+| 26 ago | Ruse → Veliko Tarnovo | Tren con posibles enlaces o autobús | Media jornada amplia |
+| 27 ago | Veliko Tarnovo → Sofía | Tren con posibles enlaces o autobús | Gran parte del día |
+| 28 y 30 ago | Sofía → Plovdiv → Sofía | Tren o autobús, en fechas separadas | Media jornada por tramo |
 
-**Noche**
-- Barrio de Skadarlija: restaurantes tradicionales serbios (pljeskavica, cevapi)
+ÖBB publica conexiones hacia Bratislava. MÁV incluye Brașov entre las paradas del Dacia nocturno entre Budapest y Bucarest. BDZ publica el corredor Bucarest–Sofía con paso por Ruse. Estas referencias respaldan la ruta, pero no confirman disponibilidad para cada fecha; fuentes al final.
 
----
+**Sin Serbia también en los billetes:** conservar Budapest → Rumanía → Giurgiu → Ruse → Bulgaria. Revisar países y estaciones de cualquier alternativa antes de comprar; no aceptar sustituciones vía Belgrado.
 
-### Dia 6 — Viernes 8 ago: Belgrado - Sofia
+**Si no hay litera:** dedicar el día 20 a una conexión diurna confirmada por Rumanía y dormir en ruta o en Brașov. Sustituir la noche de tren sin añadir días; actualizar alojamiento y reducir las visitas del 21 si hace falta.
 
-**Manana**
-- 08:00 Salida Belgrado, Heberg Bus directo a Sofia
-- 14:30 Llegada Sofia
-
-**Tarde**
-- Check-in Hotel Niky
-- Iglesia de Alexander Nevsky (entrada libre)
-- Antiguo Mercado de los Ladrones (Zhenski Pazar)
-
-**Noche**
-- Barrio de Vitosha Boulevard: bares y restaurantes
+**Si cambia Bucarest–Ruse:** elegir una alternativa confirmada vía Giurgiu/Ruse y mantener la noche en Ruse como margen. Evitar otro traslado largo ese día.
 
 ---
 
-### Dia 7 — Sabado 9 ago: Sofia
+## Alojamiento — 29 noches en tierra y 1 en tren
 
-**Manana**
-- Monasterio de Boyana (Patrimonio UNESCO, a 8 km del centro — taxi 15 BGN)
-- Museo Nacional de Historia de Bulgaria
+Habitación para dos personas; hoteles y disponibilidad por elegir. Cada regreso requiere una reserva separada, aunque se repita establecimiento.
 
-**Tarde**
-- Rotonda de San Jorge (siglo IV, en el centro)
-- Parque Borisova Gradina: descanso antes de vuelo o tren de regreso
-- Check-out Hotel Niky (hasta las 12:00)
+| Base | Entrada | Salida | Noches |
+|------|---------|--------|--------|
+| München | 1 ago | 2 ago | 1 |
+| Linz | 2 ago | 4 ago | 2 |
+| Viena I | 4 ago | 6 ago | 2 |
+| Bratislava I | 6 ago | 7 ago | 1 |
+| Viena II | 7 ago | 8 ago | 1 |
+| Brno I | 8 ago | 9 ago | 1 |
+| Praga | 9 ago | 12 ago | 3 |
+| Brno II | 12 ago | 13 ago | 1 |
+| Bratislava II | 13 ago | 15 ago | 2 |
+| Budapest I | 15 ago | 18 ago | 3 |
+| Bratislava III | 18 ago | 19 ago | 1 |
+| Budapest II | 19 ago | 20 ago | 1 |
+| Tren nocturno | 20 ago | 21 ago | 1 |
+| Brașov | 21 ago | 23 ago | 2 |
+| Bucarest | 23 ago | 25 ago | 2 |
+| Ruse | 25 ago | 26 ago | 1 |
+| Veliko Tarnovo | 26 ago | 27 ago | 1 |
+| Sofía I | 27 ago | 28 ago | 1 |
+| Plovdiv | 28 ago | 30 ago | 2 |
+| Sofía II | 30 ago | 31 ago | 1 |
+| **Total** | **1 ago** | **31 ago** | **30** |
 
-> **Vuelo de regreso:** Sofia (SOF) - München (MUC) con Lufthansa / Eurowings — duración aprox. 2h 10m. Reservar con antelacion (precio orientativo 80-140 EUR).
+Priorizar acceso sencillo a la estación en estancias de una noche. Tras el nocturno no se presupone acceso temprano a la habitación.
 
 ---
 
-## Presupuesto estimado
+## Presupuesto de planificación — 2 personas
 
-| Concepto | Importe (2 pax) |
-|----------|-----------------|
-| Transporte München - Viena (tren) | 70 EUR |
-| Transporte Viena - Budapest (tren) | 60 EUR |
-| Transporte Budapest - Belgrado (bus) | 50 EUR |
-| Transporte Belgrado - Sofia (bus) | 40 EUR |
-| Vuelo Sofia - München | 200 EUR |
-| Alojamiento (7 noches total) | 458 EUR |
-| Comidas y actividades | 400 EUR |
-| **Total estimado** | **~1.278 EUR** |
+Objetivos de gasto, **no cotizaciones**. Los retornos añaden billetes y cambios de alojamiento y forman parte del presupuesto.
+
+| Concepto | Cálculo orientativo | Total para 2 |
+|----------|---------------------|--------------|
+| Alojamiento en tierra | 29 noches × 70–120 EUR por habitación | 2.030–3.480 EUR |
+| Transporte entre ciudades | Tramos diurnos y 2 plazas nocturnas | 900–1.500 EUR |
+| Transporte urbano y excursión local | Bolsa mensual | 180–300 EUR |
+| Comidas | 31 días × 45–70 EUR entre ambos | 1.395–2.170 EUR |
+| Museos, termas y visitas | Bolsa mensual | 250–450 EUR |
+| **Subtotal** | | **4.755–7.900 EUR** |
+| Imprevistos | 15 % del subtotal, redondeado | 713–1.185 EUR |
+| **Total objetivo** | | **5.468–9.085 EUR** |
+
+La litera se cuenta en transporte, no en alojamiento. No se incluyen el desplazamiento inicial hasta München, el regreso desde Sofía, compras personales ni seguro. Si se sustituye el nocturno, recalcular esa noche y los billetes.
 
 ---
 
-## Informacion util
+## Organización práctica
 
-| | |
-|---|---|
-| **Monedas** | EUR (Austria, Eslovenia), HUF (Hungria), RSD (Serbia), BGN (Bulgaria) |
-| **Visados** | No necesarios (UE / Schengen) |
-| **Idioma** | Aleman / Hungaro / Serbio / Bulgaro — ingles ampliamente hablado en centros turisticos |
-| **Enchufes** | Tipo F (Schuko) en todos los paises |
-| **Emergencias** | 112 en toda Europa |
-| **App recomendada** | Bolt (taxi), Google Maps (transporte publico), Revolut (cambio de moneda) |
+- **Equipaje ligero:** numerosas estancias duran una noche; conviene poder caminar y subir al tren con todo el equipaje.
+- **Calendario:** distinguir Viena I/II, Bratislava I/II/III, Budapest I/II y Sofía I/II al guardar reservas.
+- **Descanso:** Praga el 11, Bratislava el 14 y el 18, Brașov el 21 y Plovdiv el 29 permiten bajar el ritmo.
+- **Horas locales:** copiar las horas de cada billete y comprobar el huso horario al calcular enlaces internacionales.
+- **Documentación:** comprobar requisitos según la nacionalidad y documentación de ambos viajeros.
+- **Reservas:** confirmar primero la litera y el cruce Bucarest–Ruse; después coordinar las estancias.
+- **Final:** cualquier vuelo o continuación desde Sofía se reserva aparte; ajustar las visitas del 31 si se sale ese día.
+
+## Fuentes para comprobar conexiones
+
+Referencias oficiales consultadas el 5 de septiembre de 2026. La consulta es posterior al mes conservado: identifica operadores y corredores, pero no certifica retrospectivamente los horarios de agosto.
+
+- [ÖBB — conexiones hacia Eslovaquia](https://www.oebb.at/de/tickets-kundenkarten/oesterreich-europa/sparschiene/sparschiene-europa/slowakei): Viena–Bratislava.
+- [MÁV — rutas nocturnas](https://www.mavcsoport.hu/en/mav-szemelyszallitas/international-travels/travel-night-trains): Dacia y paradas rumanas, incluida Brașov.
+- [BDZ — Sofía–Bucarest y Varna–Bucarest](https://www.bdz.bg/bg/a/sofiya-bukureshch-sofiya): corredor entre Rumanía y Bulgaria.
+- [BDZ — billetes internacionales](https://www.bdz.bg/en/a/office-for-international-rail-tickets): venta y reservas.

@@ -7,10 +7,13 @@ Open:  http://localhost:2380
 Shortcuts: Ctrl+S = save   Ctrl+Enter = compile
 """
 import subprocess
+import hashlib
 import sys
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file
+from services.llm import llm, CHAT_MODELS, CHAT_TIMEOUT_SECONDS, CONNECTION_TIMEOUT_SECONDS
+from services.documents import DOCUMENT_LOCK, atomic_write
 
 BASE    = Path(__file__).parent
 SCRIPT  = BASE / "services" / "md2pdf.py"
@@ -18,6 +21,7 @@ DEF_IN  = BASE / "data" / "input"
 DEF_OUT = BASE / "data" / "output"
 
 app = Flask(__name__)
+app.register_blueprint(llm)
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,7 +61,12 @@ def api_get(name):
     p = _guard_md(name, request.args.get("dir", DEF_IN))
     if not p or not p.exists():
         return "", 404
-    return Response(p.read_text("utf-8"), mimetype="text/plain")
+    with DOCUMENT_LOCK:
+        raw = p.read_bytes()
+    response = Response(raw.decode("utf-8"), mimetype="text/plain")
+    response.headers["X-Document-Revision"] = hashlib.sha256(raw).hexdigest()
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.post("/api/file/<name>")
@@ -67,8 +76,15 @@ def api_save(name):
     if not p:
         return jsonify(error="invalid"), 400
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body.get("content", ""), encoding="utf-8")
-    return jsonify(ok=True)
+    content = body.get("content", "")
+    if not isinstance(content, str):
+        return jsonify(error="Content must be text."), 400
+    with DOCUMENT_LOCK:
+        expected = body.get("disk_revision")
+        if expected is not None and (not p.exists() or hashlib.sha256(p.read_bytes()).hexdigest() != expected):
+            return jsonify(error="The file changed on disk. Reload it before saving."), 409
+        atomic_write(p, content)
+    return jsonify(ok=True, disk_revision=hashlib.sha256(content.encode("utf-8")).hexdigest())
 
 
 @app.post("/api/compile")
@@ -79,6 +95,7 @@ def api_compile():
     font_style = b.get("font_style", "default")
     font_size  = b.get("font_size",  "10")
     page_size  = b.get("page_size",  "A4")
+    doc_style  = b.get("doc_style",  "plain")
     fname      = b.get("filename")
 
     cmd = [sys.executable, str(SCRIPT), "--input-dir", in_d, "--output-dir", out_d]
@@ -88,6 +105,8 @@ def api_compile():
         cmd += ["--font-size", font_size]
     if page_size in ("A2", "A6"):
         cmd += ["--page-size", page_size]
+    if doc_style in ("plain", "article", "beamer"):
+        cmd += ["--doc-style", doc_style]
     if fname:
         target = _guard_md(fname, in_d)
         if target:
@@ -115,7 +134,11 @@ def serve_pdf(name):
 
 @app.get("/")
 def index():
-    return Response(PAGE, content_type="text/html; charset=utf-8")
+    options = ''.join(f'<option value="{name}">{name}</option>' for name in CHAT_MODELS)
+    page = (PAGE.replace('__CHAT_MODEL_OPTIONS__', options)
+            .replace('__CHAT_TIMEOUT_MS__', str((CHAT_TIMEOUT_SECONDS + 15) * 1000))
+            .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000)))
+    return Response(page, content_type="text/html; charset=utf-8")
 
 
 PAGE = r"""<!DOCTYPE html>
@@ -227,11 +250,41 @@ body {
 }
 .sg { display: flex; flex-direction: column; gap: 5px; }
 .sg label { font-size: 11px; color: var(--muted); }
-.sg input[type=text] {
+.sg input[type=text], .sg input[type=password], .sg input[type=url], .sg select {
   background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
   color: var(--text); padding: 5px 8px; font-size: 12px; width: 100%;
 }
 .sg input[type=text]:focus { outline: none; border-color: var(--accent); }
+.sg select { cursor: pointer; }
+.connection-note { font-size: 11px; color: var(--muted); line-height: 1.5; }
+#api-status[data-state=ok] { color: var(--green); }
+#api-status[data-state=error], #chat-status[data-state=error] { color: var(--red); }
+#api-connect { background: var(--accent); color: var(--crust); }
+#chat-bubble {
+  position: fixed; bottom: 20px; right: 20px; z-index: 50;
+  width: 52px; height: 52px; border: none; border-radius: 50%;
+  background: var(--accent); color: var(--crust); cursor: pointer;
+  display: grid; place-items: center; box-shadow: 0 4px 20px #0005;
+}
+#chat-window {
+  position: fixed; bottom: 84px; right: 20px; z-index: 50;
+  width: min(400px, calc(100vw - 32px)); height: min(540px, calc(100dvh - 110px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 8px 36px #0006; display: flex; flex-direction: column; overflow: hidden;
+}
+#chat-window[hidden] { display: none; }
+#chat-head { display: flex; align-items: center; gap: 10px; padding: 12px; border-bottom: 1px solid var(--border); }
+#chat-title { flex: 1; }
+.chat-action { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 4px 7px; cursor: pointer; }
+#chat-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.chat-message { padding: 9px 11px; border-radius: 9px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.chat-message.user { background: #28364d; margin-left: 26px; }
+.chat-message.assistant { margin-right: 14px; }
+.chat-message strong { display: block; color: var(--accent); font-size: 10px; margin-bottom: 4px; }
+#chat-status { padding: 0 12px 8px; font-size: 11px; color: var(--muted); }
+#chat-form { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
+#chat-input { flex: 1; min-width: 0; resize: vertical; max-height: 140px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit; }
+#chat-send { background: var(--accent); color: var(--crust); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .row span { font-size: 12px; color: var(--muted); line-height: 1.3; }
 .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
@@ -252,6 +305,20 @@ body {
   background: var(--bg); border: 1px solid var(--border);
   border-radius: 3px; padding: 0 4px; font-size: 10px; font-family: monospace;
 }
+.panel-footer {
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 6px;
+  flex-shrink: 0;
+}
+.panel-footer a {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--muted); text-decoration: none;
+  transition: color .15s;
+}
+.panel-footer a:hover { color: var(--text); }
+.panel-footer img { width: 14px; height: 14px; border-radius: 2px; opacity: .7; }
+.panel-footer a:last-child img { filter: invert(1); }
 .font-btns { display: flex; gap: 5px; }
 .font-btn {
   flex: 1; padding: 5px 0; border-radius: 5px; cursor: pointer; border: 1px solid var(--border);
@@ -365,16 +432,52 @@ body {
       </div>
     </div>
     <div class="sg">
+      <label>Style</label>
+      <div class="font-btns">
+        <button class="font-btn" id="ds-article" onclick="setDocStyle('article')">Article</button>
+        <button class="font-btn active" id="ds-plain" onclick="setDocStyle('plain')">Plain</button>
+        <button class="font-btn" id="ds-beamer" onclick="setDocStyle('beamer')">Beamer</button>
+      </div>
+    </div>
+    <div class="sg">
       <div class="row">
         <span>Auto-save on change<br><small style="font-size:10.5px;opacity:.6">(2 s debounce)</small></span>
         <label class="toggle"><input type="checkbox" id="s-auto"><span class="track"></span></label>
       </div>
     </div>
 
+    <h3>API connection</h3>
+    <div class="sg">
+      <label for="api-model">Model</label>
+      <select id="api-model">__CHAT_MODEL_OPTIONS__</select>
+      <span class="connection-note">Choose a model, then connect. You can switch anytime for the next message.</span>
+    </div>
+    <div class="sg">
+      <label for="api-key">API key</label>
+      <input type="password" id="api-key" placeholder="Paste your OpenAI API key" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="font-btns">
+      <button class="btn" id="api-connect">Connect</button>
+      <button class="chat-action" id="api-disconnect">Disconnect</button>
+    </div>
+    <p id="api-status" class="connection-note" role="status">Not connected</p>
+    <p class="connection-note">Your key is cleared on reload. Chat includes the open Markdown, including unsaved changes. Requested edits are saved to that file.</p>
+
     <p class="hint">
       <kbd>Ctrl</kbd>+<kbd>S</kbd> &nbsp;Save<br>
       <kbd>Ctrl</kbd>+<kbd>Enter</kbd> &nbsp;Compile
     </p>
+  </div>
+
+  <div class="panel-footer">
+    <a href="https://nbow.io/impressum" target="_blank" rel="noopener">
+      <img src="https://nbow.io/favicon.ico" alt="">
+      nbow.io &mdash; Impressum
+    </a>
+    <a href="https://github.com/ai-nbow-n/tool-md2pdf" target="_blank" rel="noopener">
+      <img src="https://github.com/favicon.ico" alt="">
+      GitHub: ai-nbow-n/tool-md2pdf
+    </a>
   </div>
 </div>
 
@@ -394,8 +497,27 @@ body {
   <iframe id="pdf-frame"></iframe>
 </div>
 
+<button id="chat-bubble" aria-label="Open chat" aria-expanded="false" aria-controls="chat-window" title="Chat">
+  <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg>
+</button>
+<section id="chat-window" role="dialog" aria-labelledby="chat-title" data-chat-timeout="__CHAT_TIMEOUT_MS__" data-connection-timeout="__CONNECTION_TIMEOUT_MS__" hidden>
+  <div id="chat-head">
+    <strong id="chat-title">Chat</strong>
+    <button id="chat-new" class="chat-action">New chat</button>
+    <button id="chat-close" class="chat-action" aria-label="Close chat">&#x2715;</button>
+  </div>
+  <div id="chat-messages" role="log" aria-live="polite" aria-label="Conversation">
+    <p class="connection-note" id="chat-empty">Connect your API in settings, choose a model, and say hello.</p>
+  </div>
+  <p id="chat-status" role="status">Not connected</p>
+  <form id="chat-form">
+    <textarea id="chat-input" rows="2" maxlength="12000" placeholder="Message…" aria-label="Chat message" disabled></textarea>
+    <button id="chat-send" class="btn" type="submit" disabled>Send</button>
+  </form>
+</section>
+
 <script>
-let current = null, dirty = false, autoTimer = null, fontStyle = 'default', fontSize = '10', pageSize = 'A4';
+let current = null, diskRevision = null, chatApplying = false, savePending = null, dirty = false, autoTimer = null, fontStyle = 'default', fontSize = '10', pageSize = 'A4', docStyle = 'plain';
 
 // ── CodeMirror ────────────────────────────────────────────────────────────────
 const cm = CodeMirror.fromTextArea(document.getElementById("editor"), {
@@ -407,7 +529,7 @@ const cm = CodeMirror.fromTextArea(document.getElementById("editor"), {
 cm.setSize("100%", "100%");
 cm.on("change", () => {
   markDirty(true);
-  if (document.getElementById("s-auto").checked) {
+  if (!chatApplying && document.getElementById("s-auto").checked) {
     clearTimeout(autoTimer);
     autoTimer = setTimeout(() => save(true), 2000);
   }
@@ -432,8 +554,7 @@ function loadPrefs() {
   document.getElementById("s-auto").checked = !!p.auto;
   setFontStyle(p.fontStyle || 'default');
   setFontSize(p.fontSize || '10');
-  setPageSize(p.pageSize || 'A4');
-  if (p.panel === false) { panel.classList.add("hidden"); fab.classList.add("active"); }
+  setPageSize(p.pageSize || 'A4');  setDocStyle(p.docStyle || 'plain');  if (p.panel === false) { panel.classList.add("hidden"); fab.classList.add("active"); }
 }
 function savePrefs() {
   localStorage.setItem(KEY, JSON.stringify({
@@ -443,6 +564,7 @@ function savePrefs() {
     fontStyle: fontStyle,
     fontSize:  fontSize,
     pageSize:  pageSize,
+    docStyle:  docStyle,
     panel:     !panel.classList.contains("hidden"),
   }));
 }
@@ -473,6 +595,13 @@ function setPageSize(size) {
   );
   savePrefs();
 }
+function setDocStyle(name) {
+  docStyle = name;
+  ['article','plain','beamer'].forEach(n =>
+    document.getElementById('ds-' + n).classList.toggle('active', n === name)
+  );
+  savePrefs();
+}
 
 const inDir  = () => document.getElementById("s-in").value.trim()  || null;
 const outDir = () => document.getElementById("s-out").value.trim() || null;
@@ -498,13 +627,14 @@ async function loadFiles() {
   else { sel.value = files[0]; await openFile(files[0]); }
 }
 async function openFile(name) {
-  if (!name) return;
+  if (!name || chatApplying) return;
   if (dirty && current) { if (confirm(`Save changes to ${current}?`)) await save(true); }
   const qs  = inDir() ? "?dir=" + encodeURIComponent(inDir()) : "";
   const res = await fetch(`/api/file/${encodeURIComponent(name)}` + qs);
   if (!res.ok) return setStatus("Failed to load " + name, "err");
   cm.setValue(await res.text()); cm.clearHistory(); cm.scrollTo(0, 0);
-  current = name; markDirty(false);
+  current = name; diskRevision = res.headers.get('X-Document-Revision'); markDirty(false);
+  window.dispatchEvent(new Event('markdown-file-changed'));
   document.getElementById("btn-save").disabled    = false;
   document.getElementById("btn-compile").disabled = false;
   setStatus(name); refreshPdf();
@@ -513,23 +643,34 @@ document.getElementById("file-select").addEventListener("change", e => openFile(
 
 // ── save ──────────────────────────────────────────────────────────────────────
 async function save(silent = false) {
-  if (!current) return;
-  const body = { content: cm.getValue() };
+  if (!current || chatApplying) return false;
+  if (savePending) return savePending;
+  const filename = current;
+  const body = { content: cm.getValue(), disk_revision: diskRevision };
   if (inDir()) body.dir = inDir();
-  const res = await fetch(`/api/file/${encodeURIComponent(current)}`,
+  savePending = (async () => {
+  const res = await fetch(`/api/file/${encodeURIComponent(filename)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (res.ok) { markDirty(false); if (!silent) setStatus("Saved", "ok"); }
-  else setStatus("Save failed", "err");
+  const data = await res.json();
+  if (res.ok && current === filename && (inDir() || undefined) === body.dir) {
+    diskRevision = data.disk_revision;
+    if (cm.getValue() === body.content) markDirty(false);
+    if (!silent) setStatus("Saved", "ok");
+  } else if (!res.ok) setStatus(data.error || "Save failed", "err");
+  return res.ok;
+  })();
+  try { return await savePending; }
+  finally { savePending = null; }
 }
 document.getElementById("btn-save").addEventListener("click", () => save());
 
 // ── compile ───────────────────────────────────────────────────────────────────
 async function compile() {
-  if (!current) return;
-  await save(true);
+  if (!current || chatApplying) return;
+  if (!await save(true)) return;
   setStatus("Compiling...", "busy");
   document.getElementById("btn-compile").disabled = true;
-  const body = { filename: current, font_style: fontStyle, font_size: fontSize, page_size: pageSize };
+  const body = { filename: current, font_style: fontStyle, font_size: fontSize, page_size: pageSize, doc_style: docStyle };
   if (inDir())  body.input_dir  = inDir();
   if (outDir()) body.output_dir = outDir();
   const data = await fetch("/api/compile",
@@ -563,10 +704,33 @@ document.addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key === "s" && !e.shiftKey) { e.preventDefault(); save(); }
 });
 
+// The chat uses the loaded editor snapshot; a short lock protects only its save.
+window.markdownChat = {
+  snapshot: () => current && diskRevision ? {
+    filename: current, input_dir: inDir(), content: cm.getValue(), disk_revision: diskRevision,
+  } : null,
+  async settle() { if (savePending) await savePending; },
+  lock(value) {
+    chatApplying = value;
+    clearTimeout(autoTimer);
+    cm.setOption('readOnly', value);
+    ['file-select', 's-in', 'btn-save', 'btn-compile'].forEach(id => document.getElementById(id).disabled = value || !current);
+  },
+  updated(data) {
+    const scroll = cm.getScrollInfo();
+    cm.replaceRange(data.content, {line: 0, ch: 0}, {line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length}, 'chat-edit');
+    cm.scrollTo(scroll.left, scroll.top);
+    diskRevision = data.disk_revision;
+    markDirty(false);
+    setStatus('Chat edits saved — compile to update PDF', 'ok');
+  },
+};
+
 // ── init ──────────────────────────────────────────────────────────────────────
 loadPrefs();
 loadFiles();
 </script>
+<script src="/static/chat.js"></script>
 </body>
 </html>
 """
