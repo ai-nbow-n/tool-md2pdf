@@ -1,0 +1,141 @@
+# claude.md — Project notes for tool-md2pdf
+
+## Project overview
+
+A self-contained Markdown-to-PDF tool with a browser-based editor frontend.
+Write and preview Markdown documents; compile them to PDF via a headless
+Chromium browser so Mermaid diagrams render natively.
+
+---
+
+## File structure
+
+```
+tool-md2pdf/
+├── .gitignore                  # ignores .venv/ and data/output/
+├── .venv/                      # Python virtual environment (gitignored)
+├── app.py                      # Flask editor frontend (http://localhost:2380)
+├── requirements.txt            # playwright, markdown, Pygments, flask
+├── data/
+│   ├── input/                  # drop .md files here
+│   └── output/                 # generated PDFs (gitignored)
+└── services/
+    └── md2pdf.py               # CLI conversion tool (Playwright + markdown)
+```
+
+---
+
+## Setup (one-time)
+
+```powershell
+# From the project root
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\playwright install chromium
+```
+
+---
+
+## Usage
+
+### Editor UI
+
+```powershell
+.venv\Scripts\python app.py
+# Open http://localhost:2380
+# Ctrl+S = save   Ctrl+Enter = compile
+```
+
+### CLI (md2pdf.py directly)
+
+```powershell
+# Convert all *.md in data/input/ → data/output/
+.venv\Scripts\python services\md2pdf.py
+
+# Convert a specific file
+.venv\Scripts\python services\md2pdf.py path\to\file.md
+
+# Custom directories
+.venv\Scripts\python services\md2pdf.py --input-dir C:\docs --output-dir C:\pdfs
+
+# Skip Mermaid CDN (offline; diagrams won't render)
+.venv\Scripts\python services\md2pdf.py --no-mermaid-cdn
+
+# Font styles
+.venv\Scripts\python services\md2pdf.py --font-style serif
+.venv\Scripts\python services\md2pdf.py --font-style typewriter
+```
+
+---
+
+## How it works
+
+1. Mermaid ` ```mermaid ``` ` blocks are extracted **before** markdown parsing (prevents
+   double-escaping of `<br/>` in node labels) and replaced with `<div class="mermaid">`.
+2. Remaining markdown is converted to HTML via the `markdown` library
+   (extensions: tables, fenced_code, codehilite, toc, attr_list, footnotes, nl2br).
+3. The HTML is wrapped in a full document with Mermaid.js loaded from CDN
+   and a custom CSS stylesheet (A4 page, Segoe UI, styled tables, blockquotes, etc.).
+4. Playwright opens a headless Chromium instance, loads the HTML, waits for
+   `data-processed="true"` on all `.mermaid` divs, then scales diagrams and prints to PDF.
+
+---
+
+## Mermaid diagram — hard-won fixes
+
+### Problem 1 — blank diagram box in VS Code preview
+
+**Cause:** Three issues in the diagram source simultaneously:
+- `→` (U+2192) inside edge label strings — Mermaid's lexer treats it as arrow syntax
+  even inside quotes, breaking the parse.
+- `·`, `–`, `—` Unicode chars in node labels — caused parse failures in some renderers.
+- `NAMUR → THON → NAMUR` cycle — dagre layout engine hangs on cycles in `TD` mode.
+
+**Fix:** Replace `→` with `-` or `/` in labels; replace `·`/`–`/`—` with ASCII equivalents;
+break the cycle by using a separate node for the return leg.
+
+### Problem 2 — node labels render blank in VS Code preview (`<br/>` stripped)
+
+**Cause:** VS Code's Mermaid renderer uses `securityLevel: 'strict'`, which sanitizes HTML
+in labels. `<br/>` is treated as literal text, causing the entire diagram to fail silently.
+`\n` inside quoted strings also renders as literal backslash-n in VS Code's bundled Mermaid
+version (does not process escape sequences in node label text).
+
+**Fix:** Use only single-line labels. Separate fields with ` / ` (e.g.
+`"Munich MUC / 3 Aug 08:32"`). This works in VS Code preview, Playwright PDF, and
+every other Mermaid renderer.
+
+### Problem 3 — diagram rendering blank in PDF (Playwright) — `setAttribute` vs CSS
+
+**Cause:** `svg.setAttribute('height', X)` sets an SVG *presentation attribute*
+(specificity 0). Our CSS rule `.mermaid svg { height: auto; }` (specificity 0,1,1)
+overrides it. The SVG kept its full viewBox height regardless.
+
+**Fix:** Use `svg.style.height = X + 'px'` (inline style, highest specificity) instead
+of `setAttribute`. Also clear Mermaid's inline `style.maxWidth` and remove the
+`width="100%"` attribute.
+
+### Problem 4 — diagram fits one page but leaves the preceding page blank
+
+**Cause:** The h2 heading + diagram height > one page (971 px). Chromium's print
+engine honoured `page-break-inside: avoid` by pushing the diagram to the next page,
+leaving page N with only the heading.
+
+**Fix:** Subtract the heading + top-margin height (~65 px) from the available page
+height when computing `MAX_H`:
+
+```javascript
+// inside page.evaluate() in convert_file()
+const MAX_H = (297 - 40) / 25.4 * 96 - 65;  // ~906 px
+```
+
+---
+
+## Path layout notes
+
+- `app.py` resolves paths relative to itself (project root):
+  - `SCRIPT  = BASE / "services" / "md2pdf.py"`
+  - `DEF_IN  = BASE / "data" / "input"`
+  - `DEF_OUT = BASE / "data" / "output"`
+- `md2pdf.py` CLI defaults resolve relative to itself (`services/`):
+  - `input_dir  = script_dir.parent / "data" / "input"`
+  - `output_dir = script_dir.parent / "data" / "output"`
