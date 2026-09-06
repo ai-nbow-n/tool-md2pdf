@@ -192,6 +192,14 @@ body {
   flex-shrink: 0;
 }
 .logo { font-weight: 700; font-size: 15px; color: var(--accent); }
+.panel-head-controls { display: flex; align-items: center; gap: 6px; }
+#language-select {
+  appearance: none; background: transparent; color: var(--muted);
+  border: 1px solid transparent; border-radius: 5px; padding: 5px;
+  font: 600 11px "Segoe UI", sans-serif; cursor: pointer;
+}
+#language-select:hover, #language-select:focus-visible { color: var(--text); border-color: var(--border); }
+#language-select option { background: var(--surface); color: var(--text); }
 
 #btn-close {
   background: none; border: 1px solid var(--border); color: var(--muted);
@@ -380,7 +388,14 @@ body {
 
   <div id="panel-head">
     <span class="logo">md2pdf</span>
-    <button id="btn-close" title="Hide panel">&laquo;</button>
+    <div class="panel-head-controls">
+      <select id="language-select" aria-label="Language" title="Language">
+        <option value="en" lang="en">EN</option>
+        <option value="de" lang="de">DE</option>
+        <option value="es" lang="es">ES</option>
+      </select>
+      <button id="btn-close" title="Hide panel">&laquo;</button>
+    </div>
   </div>
 
   <div id="panel-actions">
@@ -516,6 +531,7 @@ body {
   </form>
 </section>
 
+<script src="/static/i18n.js"></script>
 <script>
 let current = null, diskRevision = null, chatApplying = false, savePending = null, dirty = false, autoTimer = null, fontStyle = 'default', fontSize = '10', pageSize = 'A4', docStyle = 'plain';
 
