@@ -26,6 +26,29 @@ VPS credentials and appears alongside the website deployment in the console.
 
 The manual setup below is an alternative to that installer.
 
+### One-time deployment account permission
+
+The website SSH account originally has permission only to restart `nbow`.
+An administrator installs the reviewed wrapper once (run from this checkout):
+
+```sh
+sudo install -o root -g root -m 755 deploy/run-release.sh /usr/local/sbin/deploy-md2pdf
+sudo visudo -f /etc/sudoers.d/md2pdf
+```
+
+For this VPS's `deploy` account, the rule is:
+
+```sudoers
+deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-md2pdf
+```
+
+The wrapper accepts exactly one 40-character commit SHA, checks out only the
+fixed public md2pdf repository under `/opt/md2pdf`, refuses local modifications,
+and runs its installer. The Actions account gets no general `sudo bash`, `git`,
+or unrestricted sudo permission. Validate the rule with `sudo visudo -cf
+/etc/sudoers.d/md2pdf`. Update the root-owned wrapper deliberately when its
+source changes; ordinary application deployments do not replace it.
+
 These commands assume a Debian/Ubuntu server, a checkout at `/opt/md2pdf`, and
 Python 3.10 or newer. Run the administrative commands with sudo as necessary.
 Publish the changes in both `tool-md2pdf` and the sibling `website` repository
