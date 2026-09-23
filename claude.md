@@ -19,6 +19,13 @@ tool-md2pdf/
 ├── data/
 │   ├── input/                  # drop .md files here
 │   └── output/                 # generated PDFs (gitignored)
+├── docs/
+│   ├── chat.md                 # the editing assistant
+│   └── share.md                # the optional nbow.io corpus donation
+├── static/
+│   ├── chat.js                 # chat UI
+│   ├── i18n.js                 # interface translations (en/de/es)
+│   └── share.js                # the nbow.io sharing popup handshake
 └── services/
     └── md2pdf.py               # CLI conversion tool (Playwright + markdown)
 ```
@@ -64,6 +71,31 @@ tool-md2pdf/
 .venv\Scripts\python services\md2pdf.py --font-style serif
 .venv\Scripts\python services\md2pdf.py --font-style typewriter
 ```
+
+---
+
+## Sharing with nbow.io (optional)
+
+`static/share.js` adds a **Share with nbow.io** button that contributes the open
+document to a public Markdown research corpus. Full description in
+[docs/share.md](docs/share.md); the parts worth knowing before editing the code:
+
+- **Nothing is sent from here.** The button opens a window on nbow.io and posts
+  the document to it only after that window says it is ready. Every check —
+  cookie consent, the two acknowledgements, the three-per-hour limit — happens
+  on nbow.io, because consent lives in nbow.io's storage and this app runs at
+  `localhost`, where it can neither read that state nor be believed about it.
+- **The file name is never sent.** `window.markdownChat.snapshot()` hands back
+  `{filename, input_dir, content, disk_revision}` and `share.js` reads only
+  `content`. That is a privacy decision, not an oversight: a file name is often
+  the most identifying thing about a document. Do not "helpfully" add it.
+- **`NBOW_SHARE_BASE`** (default `https://nbow.io`) is both the popup's origin
+  and the allowlist `share.js` checks every incoming `postMessage` against. The
+  two must stay the same value, or a window from anywhere could feed this app.
+  Set it to `http://localhost:4321` to test against a local website checkout.
+- The receipt shown under the button is the only way to have a shared document
+  deleted afterwards, so it is rendered `user-select: all` and is not cleared
+  until the next share.
 
 ---
 

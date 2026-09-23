@@ -55,6 +55,18 @@
     'Compiling...': ['Kompilierung läuft...', 'Compilando...'],
     'Compiled OK': ['Erfolgreich kompiliert', 'Compilado correctamente'],
     'Chat edits saved — compile to update PDF': ['Chat-Änderungen gespeichert — zum Aktualisieren des PDFs kompilieren', 'Cambios del chat guardados — compila para actualizar el PDF'],
+    'Share with nbow.io': ['Mit nbow.io teilen', 'Compartir con nbow.io'],
+    'Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.': ['Freiwillig. Steuern Sie dieses Dokument zum öffentlichen Markdown-Korpus bei, für die Forschung darüber, wie technische Dokumente geschrieben werden.', 'Opcional. Aporte este documento al corpus público de Markdown, para investigar cómo se escriben los documentos técnicos.'],
+    'A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.': ['Es öffnet sich ein Fenster auf nbow.io. Es zeigt Ihnen den genauen Text, bittet zweimal um Bestätigung und sendet ihn erst dann. Der Dateiname wird nie gesendet. Drei Dokumente pro Stunde.', 'Se abre una ventana en nbow.io. Le muestra el texto exacto, le pide confirmar dos veces y solo entonces lo envía. El nombre del archivo nunca se envía. Tres documentos por hora.'],
+    'Nothing is sent until you confirm on nbow.io.': ['Es wird nichts gesendet, bis Sie auf nbow.io bestätigen.', 'No se envía nada hasta que confirme en nbow.io.'],
+    'Open a Markdown file first.': ['Öffnen Sie zuerst eine Markdown-Datei.', 'Abra primero un archivo Markdown.'],
+    'Opening the nbow.io sharing window…': ['Das nbow.io-Fenster zum Teilen wird geöffnet…', 'Abriendo la ventana para compartir de nbow.io…'],
+    'The sharing window is already open.': ['Das Fenster zum Teilen ist bereits offen.', 'La ventana para compartir ya está abierta.'],
+    'Waiting for your confirmation in the nbow.io window…': ['Warten auf Ihre Bestätigung im nbow.io-Fenster…', 'Esperando su confirmación en la ventana de nbow.io…'],
+    'Shared. Keep the receipt to have it deleted later.': ['Geteilt. Bewahren Sie den Beleg auf, um es später löschen zu lassen.', 'Compartido. Guarde el recibo para poder eliminarlo más adelante.'],
+    'Not shared. See the nbow.io window for the reason.': ['Nicht geteilt. Den Grund nennt das nbow.io-Fenster.', 'No se compartió. El motivo está en la ventana de nbow.io.'],
+    'Your browser blocked the window. Allow popups for this page.': ['Ihr Browser hat das Fenster blockiert. Erlauben Sie Popups für diese Seite.', 'Su navegador bloqueó la ventana. Permita las ventanas emergentes en esta página.'],
+    'The sharing window did not respond. Nothing was sent.': ['Das Fenster zum Teilen hat nicht geantwortet. Es wurde nichts gesendet.', 'La ventana para compartir no respondió. No se envió nada.'],
   };
   const prefixes = {
     'Connected · ': ['Verbunden · ', 'Conectado · '],
@@ -90,7 +102,7 @@
     originals.set(node, records);
     if (value !== rendered) write(rendered);
   }
-  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty'];
+  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status'];
   function render() {
     observer.disconnect();
     document.documentElement.lang = language;

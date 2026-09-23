@@ -6,6 +6,7 @@ Open:  http://localhost:2380
 
 Shortcuts: Ctrl+S = save   Ctrl+Enter = compile
 """
+import os
 import subprocess
 import hashlib
 import sys
@@ -19,6 +20,18 @@ BASE    = Path(__file__).parent
 SCRIPT  = BASE / "services" / "md2pdf.py"
 DEF_IN  = BASE / "data" / "input"
 DEF_OUT = BASE / "data" / "output"
+
+# Where the optional "Share with nbow.io" button sends the visitor.
+#
+# It is a whole origin and not a path because static/share.js checks every
+# incoming postMessage against it: the consent window is the only page allowed
+# to ask this app for a document, and the check is what makes that true. Point
+# it at http://localhost:4321 to work against a local copy of the website.
+#
+# Nothing is sent from here. The document travels only after the visitor
+# confirms it in that window, which runs on nbow.io and enforces the cookie
+# consent, the acknowledgements and the hourly limit. See docs/share.md.
+SHARE_BASE = os.environ.get("NBOW_SHARE_BASE", "https://nbow.io").rstrip("/")
 
 app = Flask(__name__)
 app.register_blueprint(llm)
@@ -137,7 +150,8 @@ def index():
     options = ''.join(f'<option value="{name}">{name}</option>' for name in CHAT_MODELS)
     page = (PAGE.replace('__CHAT_MODEL_OPTIONS__', options)
             .replace('__CHAT_TIMEOUT_MS__', str((CHAT_TIMEOUT_SECONDS + 15) * 1000))
-            .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000)))
+            .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000))
+            .replace('__SHARE_BASE__', SHARE_BASE))
     return Response(page, content_type="text/html; charset=utf-8")
 
 
@@ -267,6 +281,15 @@ body {
 .connection-note { font-size: 11px; color: var(--muted); line-height: 1.5; }
 #api-status[data-state=ok] { color: var(--green); }
 #api-status[data-state=error], #chat-status[data-state=error] { color: var(--red); }
+#share-status[data-state=ok] { color: var(--green); }
+#share-status[data-state=error] { color: var(--red); }
+#share-receipt {
+  display: block; margin-top: 6px; padding: 5px 7px;
+  background: var(--bg); border: 1px solid var(--green); border-radius: 5px;
+  color: var(--green); font-family: monospace; font-size: 11.5px;
+  letter-spacing: .04em; user-select: all; word-break: break-all;
+}
+#share-receipt[hidden] { display: none; }
 #api-connect { background: var(--accent); color: var(--crust); }
 #chat-bubble {
   position: fixed; bottom: 20px; right: 20px; z-index: 50;
@@ -477,6 +500,13 @@ body {
     </div>
     <p id="api-status" class="connection-note" role="status">Not connected</p>
     <p class="connection-note">Your key is cleared on reload. Chat includes the open Markdown, including unsaved changes. Requested edits are saved to that file.</p>
+
+    <h3>Share with nbow.io</h3>
+    <p class="connection-note">Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.</p>
+    <button class="btn" id="share-open" data-share-base="__SHARE_BASE__" data-client-version="1">Share with nbow.io</button>
+    <p id="share-status" class="connection-note" role="status"></p>
+    <code id="share-receipt" class="connection-note" hidden></code>
+    <p class="connection-note">A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.</p>
 
     <p class="hint">
       <kbd>Ctrl</kbd>+<kbd>S</kbd> &nbsp;Save<br>
@@ -747,6 +777,7 @@ loadPrefs();
 loadFiles();
 </script>
 <script src="/static/chat.js"></script>
+<script src="/static/share.js"></script>
 </body>
 </html>
 """
