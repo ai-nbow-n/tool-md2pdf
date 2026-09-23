@@ -9,6 +9,23 @@ same localized prefix.
 
 ## Install the service on the website VPS
 
+The local website Actions console (`http://127.0.0.1:5055`) provides the normal
+release flow. Commit and push md2pdf from its repository card, then run the
+**deploy-md2pdf** workflow using that commit as its md2pdf ref. This provisions
+or updates the Python service through `deploy/install.sh`, including Chromium's
+AppArmor namespace permission on Ubuntu, the essential session secret (created
+once), systemd units, and Nginx paths for the editor's assets and long requests.
+The installer runs a real Markdown/Mermaid conversion and verifies isolation
+before reloading Nginx. It keeps a backup of the original site outside Nginx's
+enabled directory and restores configuration if validation fails.
+
+Then commit/push the website card to run **build-and-deploy**. The two workflows
+share the deployment queue. Neither enables or triggers **sync-treatise**.
+The md2pdf workflow lives in the website repository so it uses the existing
+VPS credentials and appears alongside the website deployment in the console.
+
+The manual setup below is an alternative to that installer.
+
 These commands assume a Debian/Ubuntu server, a checkout at `/opt/md2pdf`, and
 Python 3.10 or newer. Run the administrative commands with sudo as necessary.
 Publish the changes in both `tool-md2pdf` and the sibling `website` repository

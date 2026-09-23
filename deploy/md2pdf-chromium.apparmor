@@ -1,0 +1,10 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+profile md2pdf-chromium /opt/md2pdf/browsers/chromium-*/chrome-linux*/chrome flags=(unconfined) {
+  userns,
+}
+
+profile md2pdf-chromium-headless /opt/md2pdf/browsers/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell flags=(unconfined) {
+  userns,
+}
