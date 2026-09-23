@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 from threading import RLock
 
+from services.workspaces import hosted_mode, input_directory, valid_filename, validate_save
+
 DOCUMENT_LOCK = RLock()
 DEFAULT_INPUT = Path(__file__).resolve().parent.parent / "data" / "input"
 MAX_DOCUMENT = 200_000
@@ -18,10 +20,13 @@ def document_path(document):
     if not isinstance(document, dict):
         raise ValueError("Open a Markdown file before chatting.")
     name = document.get("filename")
-    directory = document.get("input_dir") or str(DEFAULT_INPUT)
-    if not isinstance(name, str) or not name.endswith(".md") or not isinstance(directory, str):
+    directory = document.get("input_dir")
+    if (not isinstance(name, str) or not name.endswith(".md")
+            or (directory is not None and not isinstance(directory, str))):
         raise ValueError("Select a valid Markdown file and input directory.")
-    base = Path(directory).resolve()
+    if hosted_mode() and not valid_filename(name, ".md"):
+        raise ValueError("Select a Markdown filename in your browser workspace.")
+    base = input_directory(directory, DEFAULT_INPUT).resolve()
     path = (base / name).resolve()
     if base not in path.parents or not path.is_file():
         raise ValueError("Markdown file not found in the input directory.")
@@ -77,6 +82,7 @@ def apply_line_edits(content, edits):
 
 def atomic_write(path, content):
     """Caller holds DOCUMENT_LOCK. Replace only after the complete write succeeds."""
+    validate_save(path, content)
     fd, temporary = tempfile.mkstemp(prefix=".md2pdf-", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:

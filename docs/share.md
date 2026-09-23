@@ -1,7 +1,8 @@
 # Sharing a document with nbow.io
 
-Optional. md2pdf works exactly the same if you never press the button, and it
-makes no network request of its own.
+Optional. md2pdf works if you never press the button. Saving and compiling in
+the hosted editor processes your text on nbow.io, in a temporary workspace;
+it does not contribute that text to the research corpus. See [hosting.md](hosting.md).
 
 The **Share with nbow.io** button in the settings panel contributes the document
 you have open to a public research corpus about how technical Markdown is
@@ -11,7 +12,7 @@ converters break. What is collected, kept and deleted is described on
 
 ## Why it opens a window instead of posting
 
-md2pdf runs at `localhost`. nbow.io's cookie consent lives in nbow.io's own
+The desktop md2pdf app runs at `localhost`. nbow.io's cookie consent lives in nbow.io's own
 browser storage, which this origin cannot read, and nbow.io's server has no
 reason to believe a consent claim made by a page it never served. A dialog drawn
 here could only *assert* that you agreed.
@@ -21,8 +22,8 @@ state, shows you the text, collects the confirmations and asks its own server
 for a short-lived submission grant. The upload is refused without that grant, so
 the gate is enforced where it can be, rather than promised where it cannot.
 
-This is also why the button cannot be made to work offline, and why it is the
-one part of md2pdf that needs the internet.
+The hosted editor uses the same consent window, with client ID `md2pdf-web`.
+The desktop client uses `md2pdf-desktop`. Sharing needs an internet connection.
 
 ## What happens, in order
 
@@ -39,7 +40,9 @@ one part of md2pdf that needs the internet.
 5. On **Send**, nbow.io stores the document and returns a receipt code. md2pdf
    shows that code under the button so you can copy it before closing.
 
-Nothing leaves your machine before step 5.
+Nothing is submitted to the research corpus before step 5. The hosted editor
+already sends files to nbow.io for editing and conversion; this separate,
+optional flow is the only way to donate them to the corpus.
 
 ## What is sent
 

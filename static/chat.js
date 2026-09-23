@@ -53,7 +53,7 @@
     const timer = setTimeout(() => requestController.abort(), timeout);
     const progressTimer = onProgress ? setInterval(() => onProgress(Math.floor((Date.now() - started) / 1000)), 1000) : null;
     try {
-      const response = await fetch('/api/llm/' + path, {
+      const response = await fetch(window.md2pdfUrl('/api/llm/' + path), {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body), signal: requestController.signal,
       });

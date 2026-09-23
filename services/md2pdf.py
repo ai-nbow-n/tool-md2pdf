@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import re
+import secrets
 import sys
 import textwrap
 import time
@@ -252,6 +254,13 @@ def _page_dimensions(page_size: str, doc_style: str) -> tuple[float, float]:
 # ─── Mermaid.js CDN and init script ──────────────────────────────────────────
 
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+MERMAID_BUNDLE = Path(__file__).resolve().parent.parent / "static" / "vendor" / "mermaid.min.js"
+
+# Hosted source text never executes scripts or loads resources. Trusted Mermaid is
+# injected through the browser automation API, outside the document's markup.
+HOSTED_CSP = ("default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; "
+              "img-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; "
+              "object-src 'none'; connect-src 'none'")
 
 MERMAID_INIT = """
 <script>
@@ -271,6 +280,7 @@ HTML_TEMPLATE = """\
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  {security_policy}
   <title>{title}</title>
   {mermaid_script}
   {mermaid_init}
@@ -284,15 +294,16 @@ HTML_TEMPLATE = """\
 
 # ─── Markdown → HTML conversion ──────────────────────────────────────────────
 
-def _protect_mermaid_blocks(md_text: str) -> tuple[str, dict[str, str]]:
+def _protect_mermaid_blocks(md_text: str, hosted: bool = False) -> tuple[str, dict[str, str]]:
     """Extract ```mermaid blocks before markdown parsing, return (text, map)."""
     blocks: dict[str, str] = {}
     idx = 0
 
     def replacer(m: re.Match) -> str:
         nonlocal idx
-        key = f"MERMAID_BLOCK_{idx}_END"
-        blocks[key] = f'<div class="mermaid">{m.group(1).strip()}</div>'
+        key = f"MERMAID_BLOCK_{secrets.token_hex(16) if hosted else idx}_END"
+        source = m.group(1).strip()
+        blocks[key] = f'<div class="mermaid">{html.escape(source) if hosted else source}</div>'
         idx += 1
         return key
 
@@ -331,14 +342,52 @@ def _transform_beamer(body: str) -> str:
     return '\n'.join(slides)
 
 
-def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain") -> str:
+def _sanitize_hosted_html(body: str) -> str:
+    """Keep printable Markdown formatting, never executable or embedded HTML."""
+    import bleach
+    from bleach.css_sanitizer import CSSSanitizer
+
+    def attributes(tag, name, value):
+        if name in ("class", "id", "title", "style"):
+            return True
+        if tag == "a" and name == "href":
+            return value.startswith(("https://", "http://", "mailto:", "#"))
+        if tag == "img":
+            if name in ("alt", "width", "height"):
+                return True
+            if name == "src":
+                return bool(re.match(r"\Adata:image/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+\Z", value))
+        return tag in ("td", "th") and name in ("colspan", "rowspan")
+
+    return bleach.clean(
+        body,
+        tags={"p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote",
+              "pre", "code", "div", "span", "strong", "em", "b", "i", "del", "s",
+              "sup", "sub", "ul", "ol", "li", "dl", "dt", "dd", "a", "img",
+              "table", "thead", "tbody", "tfoot", "tr", "th", "td"},
+        attributes=attributes,
+        protocols={"http", "https", "mailto", "data"},
+        css_sanitizer=CSSSanitizer(allowed_css_properties={
+            "color", "background-color", "font-weight", "font-style", "text-align",
+            "text-decoration", "white-space"}),
+        strip=True,
+    )
+
+
+def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain", hosted: bool = False) -> str:
     """Convert Markdown source to a complete HTML document string."""
     try:
         import markdown
     except ImportError:
         sys.exit("Missing dependency: pip install markdown")
 
-    protected, mermaid_map = _protect_mermaid_blocks(md_text)
+    if hosted:
+        if len(md_text.encode("utf-8")) > 1024 * 1024:
+            raise ValueError("Markdown must contain at most 1 MiB of UTF-8 text.")
+        if (font_style not in ("default", "serif", "typewriter") or font_size not in ("8", "10", "12")
+                or page_size not in _PAGE_WIDTH_MM or doc_style not in ("plain", "article", "beamer")):
+            raise ValueError("Invalid PDF formatting option.")
+    protected, mermaid_map = _protect_mermaid_blocks(md_text, hosted=hosted)
 
     md = markdown.Markdown(
         extensions=["tables", "fenced_code", "codehilite", "toc", "attr_list", "footnotes", "nl2br"],
@@ -348,6 +397,8 @@ def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: 
         },
     )
     body = md.convert(protected)
+    if hosted:
+        body = _sanitize_hosted_html(body)
 
     # Restore mermaid blocks — markdown may have wrapped the placeholder in <p>
     for key, block in mermaid_map.items():
@@ -357,8 +408,8 @@ def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: 
     if doc_style == "beamer":
         body = _transform_beamer(body)
 
-    mermaid_script = f'<script src="{MERMAID_CDN}"></script>' if use_cdn else ""
-    mermaid_init = MERMAID_INIT if (mermaid_map or use_cdn) else ""
+    mermaid_script = f'<script src="{MERMAID_CDN}"></script>' if use_cdn and not hosted else ""
+    mermaid_init = MERMAID_INIT if not hosted and (mermaid_map or use_cdn) else ""
 
     _font_extra  = {"serif": PAGE_CSS_SERIF, "typewriter": PAGE_CSS_TYPEWRITER}.get(font_style, "")
     _style_extra = {"article": PAGE_CSS_ARTICLE, "beamer": PAGE_CSS_BEAMER}.get(doc_style, "")
@@ -372,7 +423,9 @@ def md_to_html(md_text: str, title: str = "", use_cdn: bool = True, font_style: 
         # Keep the title slide within even the smallest selected paper size.
         _overrides += f"\n.title-slide {{ min-height: {height - 30}mm; padding: 5mm; }}"
     return HTML_TEMPLATE.format(
-        title=title,
+        title=html.escape(title) if hosted else title,
+        security_policy=(f'<meta http-equiv="Content-Security-Policy" '
+                         f'content="{HOSTED_CSP.format(nonce=secrets.token_urlsafe(24))}">') if hosted else "",
         mermaid_script=mermaid_script,
         mermaid_init=mermaid_init,
         css=PAGE_CSS + _extra + _overrides,
@@ -418,7 +471,47 @@ def _fit_diagrams(page, page_size: str, doc_style: str) -> None:
             "maxHeight": (height - vertical_margin) / 25.4 * 96 - 65})
 
 
-def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain") -> None:
+def _hosted_page(browser):
+    """A fresh browser context without network access or service workers."""
+    context = browser.new_context(service_workers="block", accept_downloads=False)
+    context.route("**/*", lambda route: route.abort())
+    return context.new_page()
+
+
+def _render_hosted_mermaid(page) -> None:
+    if not page.locator(".mermaid").count():
+        return
+    # The packaged JavaScript is trusted application code, never fetched in
+    # response to a document URL. Its nonce is generated after sanitization, so
+    # no source text can authorize a script in the rendered document.
+    policy = page.locator('meta[http-equiv="Content-Security-Policy"]').get_attribute("content")
+    nonce = re.search(r"'nonce-([^']+)'", policy).group(1)
+    page.evaluate("""({source, nonce}) => {
+        const script = document.createElement('script');
+        script.nonce = nonce;
+        script.textContent = source;
+        document.head.appendChild(script);
+    }""", {"source": MERMAID_BUNDLE.read_text(encoding="utf-8"), "nonce": nonce})
+    try:
+        page.evaluate("""async () => {
+            mermaid.initialize({
+                startOnLoad: false, securityLevel: 'strict', theme: 'default',
+                flowchart: {htmlLabels: true, curve: 'linear'},
+                maxTextSize: 50000, maxEdges: 500, suppressErrorRendering: true,
+                secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize',
+                         'maxEdges', 'suppressErrorRendering', 'dompurifyConfig']
+            });
+            await Promise.race([
+                mermaid.run({nodes: document.querySelectorAll('.mermaid')}),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
+            ]);
+        }""")
+    except Exception:
+        # Mermaid's errors contain source excerpts; never expose them in logs.
+        raise ValueError("A Mermaid diagram could not be rendered. Check its syntax and size.") from None
+
+
+def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font_style: str = "default", font_size: str = "10", page_size: str = "A4", doc_style: str = "plain", hosted: bool = False) -> None:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -428,13 +521,13 @@ def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font
         )
 
     md_text = input_path.read_text(encoding="utf-8")
-    html = md_to_html(md_text, title=input_path.stem, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style)
+    html = md_to_html(md_text, title=input_path.stem, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style, hosted=hosted)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch()
-        page = browser.new_page()
+        browser = pw.chromium.launch(chromium_sandbox=hosted)
+        page = _hosted_page(browser) if hosted else browser.new_page()
 
         # Match viewport to paper so content fills the full width (critical for A2)
         width, height = _page_dimensions(page_size, doc_style)
@@ -446,14 +539,17 @@ def convert_file(input_path: Path, output_path: Path, use_cdn: bool = True, font
         page.emulate_media(media="print")
 
         # Load HTML; wait for network (fetches Mermaid CDN) to go idle
-        page.set_content(html, wait_until="networkidle", timeout=30_000)
+        page.set_content(html, wait_until="load" if hosted else "networkidle", timeout=30_000)
 
         # Wait until Mermaid finishes rendering all diagrams (max 20 s)
-        try:
-            page.wait_for_function(_wait_for_mermaid_js(), timeout=20_000)
-        except Exception:
-            # Diagrams may not have rendered; continue anyway
-            pass
+        if hosted:
+            _render_hosted_mermaid(page)
+        else:
+            try:
+                page.wait_for_function(_wait_for_mermaid_js(), timeout=20_000)
+            except Exception:
+                # Diagrams may not have rendered; continue anyway
+                pass
 
         _fit_diagrams(page, page_size, doc_style)
 
@@ -500,6 +596,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         metavar="DIR",
         help="Directory to write PDFs to (default: <script_dir>/output)",
+    )
+    parser.add_argument(
+        "--hosted",
+        action="store_true",
+        help="Render untrusted Markdown with sanitized HTML and no resource requests",
     )
     parser.add_argument(
         "--no-mermaid-cdn",
@@ -565,10 +666,12 @@ def main() -> None:
         out = output_dir / f.with_suffix(".pdf").name
         t0 = time.monotonic()
         try:
-            convert_file(f, out, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style)
+            convert_file(f, out, use_cdn=use_cdn, font_style=font_style, font_size=font_size, page_size=page_size, doc_style=doc_style, hosted=args.hosted)
             elapsed = time.monotonic() - t0
             print(f"  OK  {f.name}  ->  {out.name}  ({elapsed:.1f}s)")
         except Exception as exc:
+            if args.hosted:
+                exc = ValueError("Conversion failed. Check document syntax and size.")
             print(f"  ERR {f.name}: {exc}", file=sys.stderr)
             errors.append((f, exc))
 

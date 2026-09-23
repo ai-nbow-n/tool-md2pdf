@@ -1,0 +1,23 @@
+[Unit]
+Description=nbow.io Markdown editor and PDF converter
+After=network.target
+
+[Service]
+Type=simple
+User=md2pdf
+Group=md2pdf
+WorkingDirectory=/opt/md2pdf
+EnvironmentFile=/etc/md2pdf.env
+Environment=HOME=/var/lib/md2pdf
+ExecStart=/opt/md2pdf/.venv/bin/gunicorn --bind 127.0.0.1:2380 --workers 1 --threads 6 --timeout 220 --graceful-timeout 220 --limit-request-line 4094 app:app
+Restart=on-failure
+TimeoutStopSec=230
+UMask=0077
+StateDirectory=md2pdf
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/md2pdf
+
+[Install]
+WantedBy=multi-user.target

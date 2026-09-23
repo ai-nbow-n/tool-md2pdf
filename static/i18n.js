@@ -1,6 +1,12 @@
 /* Translate interface chrome only; document and conversation content stay intact. */
 (() => {
   const strings = {
+    'New': ['Neu', 'Nuevo'],
+    'Open Markdown': ['Markdown öffnen', 'Abrir Markdown'],
+    'Download Markdown': ['Markdown herunterladen', 'Descargar Markdown'],
+    'Download PDF': ['PDF herunterladen', 'Descargar PDF'],
+    'Files are processed on nbow.io in your temporary workspace and expire after 24 hours of inactivity. Download your work to keep it. Corpus sharing is optional.': ['Dateien werden auf nbow.io in Ihrem temporären Arbeitsbereich verarbeitet und verfallen nach 24 Stunden Inaktivität. Laden Sie Ihre Arbeit herunter, um sie zu behalten. Das Teilen mit dem Korpus ist freiwillig.', 'Los archivos se procesan en nbow.io en su espacio temporal y caducan tras 24 horas de inactividad. Descargue su trabajo para conservarlo. Compartir con el corpus es opcional.'],
+    'Nothing is shared with the corpus until you confirm on nbow.io.': ['Es wird nichts mit dem Korpus geteilt, bis Sie auf nbow.io bestätigen.', 'No se comparte nada con el corpus hasta que confirme en nbow.io.'],
     'Language': ['Sprache', 'Idioma'],
     'Hide panel': ['Panel ausblenden', 'Ocultar panel'],
     'Toggle panel': ['Panel einblenden', 'Mostrar panel'],
@@ -81,6 +87,8 @@
   const selector = document.getElementById('language-select');
   let language = 'en';
   try { language = localStorage.getItem('md2pdf-language') || 'en'; } catch (_) { /* Storage may be unavailable. */ }
+  const routeLanguage = location.pathname.split('/')[1];
+  if (document.body.dataset.hosted === 'true' && ['en', 'de', 'es'].includes(routeLanguage)) language = routeLanguage;
   if (!['en', 'de', 'es'].includes(language)) language = 'en';
   const originals = new WeakMap();
   function translate(text) {

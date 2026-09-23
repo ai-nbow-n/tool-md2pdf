@@ -44,6 +44,18 @@ tool-md2pdf/
 
 ## Usage
 
+### Hosted website
+
+The editor also runs under `/{lang}/products/aiconsulting/code-agents/md2pdf/`
+on nbow.io. The sibling website repository proxies that path to the loopback
+Python service. Setup and systemd files are documented in [docs/hosting.md](docs/hosting.md).
+`MD2PDF_HOSTED=1` requires a stable `MD2PDF_SECRET_KEY` and enables isolated,
+temporary browser workspaces. Every document path, including chat edits, must
+go through `services/workspaces.py`; never trust server directories from clients.
+The hosted renderer sanitizes HTML, uses bundled Mermaid, and blocks networking.
+Desktop use remains the default. Frontend URLs must use `window.md2pdfUrl()` so
+localized paths work. Browser assets are vendored in `static/vendor/`.
+
 ### Editor UI
 
 ```powershell
@@ -85,6 +97,8 @@ document to a public Markdown research corpus. Full description in
   cookie consent, the two acknowledgements, the three-per-hour limit — happens
   on nbow.io, because consent lives in nbow.io's storage and this app runs at
   `localhost`, where it can neither read that state nor be believed about it.
+  Hosted conversion already processes documents on nbow.io; the sharing button
+  only governs the separate corpus donation. Its client ID is `md2pdf-web`.
 - **The file name is never sent.** `window.markdownChat.snapshot()` hands back
   `{filename, input_dir, content, disk_revision}` and `share.js` reads only
   `content`. That is a privacy decision, not an oversight: a file name is often

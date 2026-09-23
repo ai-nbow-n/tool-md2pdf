@@ -25,12 +25,12 @@
 
 	const MESSAGE_SOURCE_IN = "nbow-corpus-share";
 	const MESSAGE_SOURCE_OUT = "nbow-corpus-client";
-	const CLIENT_ID = "md2pdf-desktop";
 	/** Give up if the window never says hello — blocked, offline, or 404. */
 	const READY_TIMEOUT_MS = 20000;
 
 	const button = document.getElementById("share-open");
 	if (!button) return;
+	const CLIENT_ID = button.dataset.clientId || "md2pdf-desktop";
 
 	const shareBase = button.dataset.shareBase;
 	const clientVersion = button.dataset.clientVersion || null;
@@ -58,6 +58,8 @@
 	}
 
 	function language() {
+		const selected = document.documentElement.lang;
+		if (["en", "de", "es"].includes(selected)) return selected;
 		try {
 			const stored = localStorage.getItem("md2pdf-language");
 			if (["en", "de", "es"].includes(stored)) return stored;
@@ -154,5 +156,5 @@
 		}, READY_TIMEOUT_MS);
 	});
 
-	status("Nothing is sent until you confirm on nbow.io.", "");
+	status("Nothing is shared with the corpus until you confirm on nbow.io.", "");
 })();

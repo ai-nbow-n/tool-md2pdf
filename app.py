@@ -10,11 +10,15 @@ import os
 import subprocess
 import hashlib
 import sys
+import html
+from threading import BoundedSemaphore, Lock
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file
 from services.llm import llm, CHAT_MODELS, CHAT_TIMEOUT_SECONDS, CONNECTION_TIMEOUT_SECONDS
 from services.documents import DOCUMENT_LOCK, atomic_write
+from services.workspaces import configure_hosted, hosted_mode, input_directory, output_directory, valid_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 BASE    = Path(__file__).parent
 SCRIPT  = BASE / "services" / "md2pdf.py"
@@ -34,13 +38,57 @@ DEF_OUT = BASE / "data" / "output"
 SHARE_BASE = os.environ.get("NBOW_SHARE_BASE", "https://nbow.io").rstrip("/")
 
 app = Flask(__name__)
+configure_hosted(app)
+if app.config.get("MD2PDF_HOSTED"):
+    app.config["MAX_CONTENT_LENGTH"] = 2_000_000
+    # Only the loopback website proxy can reach the production listener.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1, x_host=0, x_prefix=1)
 app.register_blueprint(llm)
+COMPILE_SLOTS = BoundedSemaphore(2)
+COMPILE_LOCK = Lock()
+COMPILING = set()
+
+
+@app.errorhandler(ValueError)
+def invalid_request(error):
+    return jsonify(error=str(error)), 400
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify(error="The request is too large. Use a smaller document or start a new chat."), 413
+
+
+@app.before_request
+def check_hosted_request():
+    if hosted_mode() and request.method == "POST":
+        if request.headers.get("Origin") not in (None, request.host_url.rstrip("/")):
+            return jsonify(error="Cross-origin requests are not allowed."), 403
+        if not request.is_json:
+            return jsonify(error="Send a JSON request."), 415
+
+
+@app.after_request
+def hosted_headers(response):
+    if hosted_mode():
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return response
+
+
+def json_body():
+    body = request.get_json()
+    if not isinstance(body, dict):
+        raise ValueError("Expected a JSON object.")
+    return body
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _guard_md(name: str, dir_: str | Path) -> Path | None:
     """Resolve path and block traversal; only .md files allowed."""
-    if not str(name).endswith(".md"):
+    if not isinstance(name, str) or not name.endswith(".md") or (hosted_mode() and not valid_filename(name, ".md")):
         return None
     base   = Path(str(dir_)).resolve()
     target = (base / name).resolve()
@@ -51,7 +99,7 @@ def _guard_md(name: str, dir_: str | Path) -> Path | None:
 
 def _guard_pdf(name: str, dir_: str | Path) -> Path | None:
     """Resolve PDF path and block traversal."""
-    if not str(name).endswith(".pdf"):
+    if not isinstance(name, str) or not name.endswith(".pdf") or (hosted_mode() and not valid_filename(name, ".pdf")):
         return None
     base   = Path(str(dir_)).resolve()
     target = (base / name).resolve()
@@ -64,14 +112,14 @@ def _guard_pdf(name: str, dir_: str | Path) -> Path | None:
 
 @app.get("/api/files")
 def api_files():
-    d = Path(request.args.get("dir", str(DEF_IN)))
+    d = input_directory(request.args.get("dir"), DEF_IN)
     names = sorted(p.name for p in d.glob("*.md") if p.is_file()) if d.is_dir() else []
     return jsonify(names)
 
 
 @app.get("/api/file/<name>")
 def api_get(name):
-    p = _guard_md(name, request.args.get("dir", DEF_IN))
+    p = _guard_md(name, input_directory(request.args.get("dir"), DEF_IN))
     if not p or not p.exists():
         return "", 404
     with DOCUMENT_LOCK:
@@ -84,8 +132,8 @@ def api_get(name):
 
 @app.post("/api/file/<name>")
 def api_save(name):
-    body = request.get_json(force=True) or {}
-    p = _guard_md(name, body.get("dir", DEF_IN))
+    body = json_body()
+    p = _guard_md(name, input_directory(body.get("dir"), DEF_IN))
     if not p:
         return jsonify(error="invalid"), 400
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +141,8 @@ def api_save(name):
     if not isinstance(content, str):
         return jsonify(error="Content must be text."), 400
     with DOCUMENT_LOCK:
+        if body.get("create_only") and p.exists():
+            return jsonify(error="That file already exists. Choose another name."), 409
         expected = body.get("disk_revision")
         if expected is not None and (not p.exists() or hashlib.sha256(p.read_bytes()).hexdigest() != expected):
             return jsonify(error="The file changed on disk. Reload it before saving."), 409
@@ -102,14 +152,17 @@ def api_save(name):
 
 @app.post("/api/compile")
 def api_compile():
-    b      = request.get_json(force=True) or {}
-    in_d   = b.get("input_dir",  str(DEF_IN))
-    out_d  = b.get("output_dir", str(DEF_OUT))
+    b      = json_body()
+    in_d   = str(input_directory(b.get("input_dir"), DEF_IN))
+    out_d  = str(output_directory(b.get("output_dir"), DEF_OUT))
     font_style = b.get("font_style", "default")
     font_size  = b.get("font_size",  "10")
     page_size  = b.get("page_size",  "A4")
     doc_style  = b.get("doc_style",  "plain")
     fname      = b.get("filename")
+
+    if hosted_mode() and not fname:
+        return jsonify(error="Choose a Markdown file to compile."), 400
 
     cmd = [sys.executable, str(SCRIPT), "--input-dir", in_d, "--output-dir", out_d]
     if font_style in ("serif", "typewriter"):
@@ -122,19 +175,33 @@ def api_compile():
         cmd += ["--doc-style", doc_style]
     if fname:
         target = _guard_md(fname, in_d)
-        if target:
-            cmd.append(str(target))
+        if not target or not target.is_file():
+            return jsonify(error="Markdown file not found."), 400
+        cmd.append(str(target))
+    if hosted_mode():
+        cmd.append("--hosted")
+    job = (in_d, fname)
+    with COMPILE_LOCK:
+        if job in COMPILING or not COMPILE_SLOTS.acquire(blocking=False):
+            return jsonify(ok=False, error="The converter is busy. Try again shortly."), 429
+        COMPILING.add(job)
 
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if hosted_mode():
+            return jsonify(ok=(r.returncode == 0), out="", err="" if r.returncode == 0 else "Could not compile this document. Check its Markdown and diagrams.")
         return jsonify(ok=(r.returncode == 0), out=r.stdout, err=r.stderr)
     except subprocess.TimeoutExpired:
         return jsonify(ok=False, out="", err="Timeout after 120 s")
+    finally:
+        with COMPILE_LOCK:
+            COMPILING.remove(job)
+            COMPILE_SLOTS.release()
 
 
 @app.get("/pdf/<name>")
 def serve_pdf(name):
-    d = request.args.get("dir", str(DEF_OUT))
+    d = output_directory(request.args.get("dir"), DEF_OUT)
     p = _guard_pdf(name, d)
     if not p or not p.exists():
         return "PDF not found -- compile first.", 404
@@ -151,7 +218,10 @@ def index():
     page = (PAGE.replace('__CHAT_MODEL_OPTIONS__', options)
             .replace('__CHAT_TIMEOUT_MS__', str((CHAT_TIMEOUT_SECONDS + 15) * 1000))
             .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000))
-            .replace('__SHARE_BASE__', SHARE_BASE))
+            .replace('__SHARE_BASE__', html.escape(SHARE_BASE, quote=True))
+            .replace('__APP_BASE__', html.escape(request.script_root, quote=True))
+            .replace('__HOSTED__', 'true' if hosted_mode() else 'false')
+            .replace('__SHARE_CLIENT__', 'md2pdf-web' if hosted_mode() else 'md2pdf-desktop'))
     return Response(page, content_type="text/html; charset=utf-8")
 
 
@@ -159,13 +229,15 @@ PAGE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="md2pdf-base" content="__APP_BASE__">
 <title>md2pdf</title>
 <link rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  href="__APP_BASE__/static/vendor/codemirror/codemirror.min.css">
 <link rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+  href="__APP_BASE__/static/vendor/codemirror/dracula.min.css">
+<script src="__APP_BASE__/static/vendor/codemirror/codemirror.min.js"></script>
+<script src="__APP_BASE__/static/vendor/codemirror/markdown.min.js"></script>
 <style>
 :root {
   --panel-w: 272px;
@@ -180,6 +252,7 @@ PAGE = r"""<!DOCTYPE html>
   --muted:   #6c7086;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden], body[data-hosted="true"] .local-only, body[data-hosted="false"] .hosted-only { display: none !important; }
 body {
   display: flex; height: 100vh; overflow: hidden;
   background: var(--bg); color: var(--text);
@@ -246,6 +319,8 @@ body {
 .btn:active { filter: brightness(.88); }
 .btn:disabled { opacity: .38; cursor: not-allowed; filter: none; }
 #btn-save    { background: var(--bg); color: var(--text); border: 1px solid var(--border); flex-shrink: 0; }
+#file-actions .btn { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+#btn-open { flex: 1; }
 #btn-compile { background: var(--accent); color: #1e1e2e; flex: 1; }
 
 #status { display: flex; align-items: center; gap: 7px; min-height: 18px; }
@@ -402,9 +477,15 @@ body {
 
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+@media (max-width: 760px) {
+  body { flex-wrap: wrap; overflow: auto; height: auto; min-height: 100vh; }
+  #panel { width: 100%; max-height: 48vh; }
+  #panel.hidden { height: 0; }
+  #editor-pane, #pdf-pane { width: 100%; flex: none; height: 60vh; }
+}
 </style>
 </head>
-<body>
+<body data-hosted="__HOSTED__">
 
 <!-- SETTINGS PANEL -->
 <div id="panel">
@@ -422,11 +503,21 @@ body {
   </div>
 
   <div id="panel-actions">
+    <div class="font-btns" id="file-actions">
+      <button class="btn" id="btn-new">New</button>
+      <button class="btn" id="btn-open">Open Markdown</button>
+      <input id="file-upload" type="file" accept=".md,text/markdown,text/plain" hidden>
+    </div>
     <select id="file-select"><option value="">-- no files --</option></select>
     <div id="btn-row">
       <button class="btn" id="btn-save"    disabled>Save</button>
       <button class="btn" id="btn-compile" disabled>&#x25B6; Compile</button>
     </div>
+    <div class="font-btns">
+      <button class="chat-action" id="btn-download-md" disabled>Download Markdown</button>
+      <button class="chat-action" id="btn-download-pdf" disabled>Download PDF</button>
+    </div>
+    <p class="connection-note hosted-only">Files are processed on nbow.io in your temporary workspace and expire after 24 hours of inactivity. Download your work to keep it. Corpus sharing is optional.</p>
     <div id="status">
       <div id="dot"></div>
       <span id="status-msg">Ready</span>
@@ -434,12 +525,12 @@ body {
   </div>
 
   <div id="panel-settings">
-    <h3>Configuration</h3>
-    <div class="sg">
+    <h3 class="local-only">Configuration</h3>
+    <div class="sg local-only">
       <label>Input directory</label>
       <input type="text" id="s-in" placeholder="default: ./data/input">
     </div>
-    <div class="sg">
+    <div class="sg local-only">
       <label>Output directory</label>
       <input type="text" id="s-out" placeholder="default: ./data/output">
     </div>
@@ -503,7 +594,7 @@ body {
 
     <h3>Share with nbow.io</h3>
     <p class="connection-note">Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.</p>
-    <button class="btn" id="share-open" data-share-base="__SHARE_BASE__" data-client-version="1">Share with nbow.io</button>
+    <button class="btn" id="share-open" data-share-base="__SHARE_BASE__" data-client-id="__SHARE_CLIENT__" data-client-version="1">Share with nbow.io</button>
     <p id="share-status" class="connection-note" role="status"></p>
     <code id="share-receipt" class="connection-note" hidden></code>
     <p class="connection-note">A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.</p>
@@ -520,7 +611,6 @@ body {
       nbow.io &mdash; Impressum
     </a>
     <a href="https://github.com/ai-nbow-n/tool-md2pdf" target="_blank" rel="noopener">
-      <img src="https://github.com/favicon.ico" alt="">
       GitHub: ai-nbow-n/tool-md2pdf
     </a>
   </div>
@@ -561,8 +651,12 @@ body {
   </form>
 </section>
 
-<script src="/static/i18n.js"></script>
 <script>
+window.md2pdfUrl = path => document.querySelector('meta[name="md2pdf-base"]').content + path;
+</script>
+<script src="__APP_BASE__/static/i18n.js"></script>
+<script>
+const hosted = document.body.dataset.hosted === 'true';
 let current = null, diskRevision = null, chatApplying = false, savePending = null, dirty = false, autoTimer = null, fontStyle = 'default', fontSize = '10', pageSize = 'A4', docStyle = 'plain';
 
 // ── CodeMirror ────────────────────────────────────────────────────────────────
@@ -594,15 +688,18 @@ fab.addEventListener("click", openPanel);
 // ── prefs ─────────────────────────────────────────────────────────────────────
 const KEY = "md2pdf-editor";
 function loadPrefs() {
-  const p = JSON.parse(localStorage.getItem(KEY) || "{}");
-  document.getElementById("s-in").value  = p.inDir  || "";
-  document.getElementById("s-out").value = p.outDir || "";
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (_) { /* Preferences are optional. */ }
+  if (!p || typeof p !== 'object') p = {};
+  document.getElementById("s-in").value  = hosted ? "" : p.inDir || "";
+  document.getElementById("s-out").value = hosted ? "" : p.outDir || "";
   document.getElementById("s-auto").checked = !!p.auto;
   setFontStyle(p.fontStyle || 'default');
   setFontSize(p.fontSize || '10');
   setPageSize(p.pageSize || 'A4');  setDocStyle(p.docStyle || 'plain');  if (p.panel === false) { panel.classList.add("hidden"); fab.classList.add("active"); }
 }
 function savePrefs() {
+  try {
   localStorage.setItem(KEY, JSON.stringify({
     inDir:     document.getElementById("s-in").value,
     outDir:    document.getElementById("s-out").value,
@@ -613,6 +710,7 @@ function savePrefs() {
     docStyle:  docStyle,
     panel:     !panel.classList.contains("hidden"),
   }));
+  } catch (_) { /* Continue when browser storage is unavailable. */ }
 }
 ["s-in","s-out","s-auto"].forEach(id =>
   document.getElementById(id).addEventListener("change", () => {
@@ -649,8 +747,8 @@ function setDocStyle(name) {
   savePrefs();
 }
 
-const inDir  = () => document.getElementById("s-in").value.trim()  || null;
-const outDir = () => document.getElementById("s-out").value.trim() || null;
+const inDir  = () => hosted ? null : document.getElementById("s-in").value.trim() || null;
+const outDir = () => hosted ? null : document.getElementById("s-out").value.trim() || null;
 function setStatus(msg, type = "") {
   document.getElementById("status-msg").textContent = msg;
   document.getElementById("dot").className = type;
@@ -663,7 +761,9 @@ function markDirty(v) {
 // ── files ─────────────────────────────────────────────────────────────────────
 async function loadFiles() {
   const qs = inDir() ? "?dir=" + encodeURIComponent(inDir()) : "";
-  const files = await fetch("/api/files" + qs).then(r => r.json());
+  const response = await fetch(window.md2pdfUrl("/api/files") + qs);
+  if (!response.ok) throw new Error('Could not load your files. Reload to start a new workspace.');
+  const files = await response.json();
   const sel = document.getElementById("file-select");
   const prev = sel.value;
   sel.innerHTML = "";
@@ -674,12 +774,20 @@ async function loadFiles() {
 }
 async function openFile(name) {
   if (!name || chatApplying) return;
-  if (dirty && current) { if (confirm(`Save changes to ${current}?`)) await save(true); }
+  if (dirty && current && confirm(`Save changes to ${current}?`) && !await save(true)) {
+    document.getElementById('file-select').value = current;
+    return;
+  }
   const qs  = inDir() ? "?dir=" + encodeURIComponent(inDir()) : "";
-  const res = await fetch(`/api/file/${encodeURIComponent(name)}` + qs);
+  const res = await fetch(window.md2pdfUrl(`/api/file/${encodeURIComponent(name)}`) + qs);
   if (!res.ok) return setStatus("Failed to load " + name, "err");
   cm.setValue(await res.text()); cm.clearHistory(); cm.scrollTo(0, 0);
   current = name; diskRevision = res.headers.get('X-Document-Revision'); markDirty(false);
+  document.getElementById("pdf-frame").src = 'about:blank';
+  document.getElementById("pdf-frame").style.display = 'none';
+  document.getElementById("pdf-ph").style.display = '';
+  document.getElementById("btn-download-pdf").disabled = true;
+  document.getElementById("btn-download-md").disabled = false;
   window.dispatchEvent(new Event('markdown-file-changed'));
   document.getElementById("btn-save").disabled    = false;
   document.getElementById("btn-compile").disabled = false;
@@ -695,7 +803,7 @@ async function save(silent = false) {
   const body = { content: cm.getValue(), disk_revision: diskRevision };
   if (inDir()) body.dir = inDir();
   savePending = (async () => {
-  const res = await fetch(`/api/file/${encodeURIComponent(filename)}`,
+  const res = await fetch(window.md2pdfUrl(`/api/file/${encodeURIComponent(filename)}`),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json();
   if (res.ok && current === filename && (inDir() || undefined) === body.dir) {
@@ -706,6 +814,7 @@ async function save(silent = false) {
   return res.ok;
   })();
   try { return await savePending; }
+  catch (_) { setStatus('Save failed. Check your connection and try again.', 'err'); return false; }
   finally { savePending = null; }
 }
 document.getElementById("btn-save").addEventListener("click", () => save());
@@ -719,16 +828,18 @@ async function compile() {
   const body = { filename: current, font_style: fontStyle, font_size: fontSize, page_size: pageSize, doc_style: docStyle };
   if (inDir())  body.input_dir  = inDir();
   if (outDir()) body.output_dir = outDir();
-  const data = await fetch("/api/compile",
+  try {
+  const data = await fetch(window.md2pdfUrl("/api/compile"),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
   ).then(r => r.json());
-  document.getElementById("btn-compile").disabled = false;
   if (data.ok) { setStatus("Compiled OK", "ok"); refreshPdf(); }
   else {
-    const tail = (data.err || data.out || "error").split("\n").filter(Boolean).slice(-2).join(" | ");
+    const tail = (data.error || data.err || data.out || "error").split("\n").filter(Boolean).slice(-2).join(" | ");
     setStatus("Error -- " + tail, "err");
     console.error(data.out, data.err);
   }
+  } catch (_) { setStatus("Could not compile. Check your connection and try again.", "err"); }
+  finally { document.getElementById("btn-compile").disabled = false; }
 }
 document.getElementById("btn-compile").addEventListener("click", compile);
 
@@ -738,10 +849,13 @@ function refreshPdf() {
   const pdfName = current.replace(/\.md$/, ".pdf");
   const qs = new URLSearchParams({ t: Date.now() });
   if (outDir()) qs.set("dir", outDir());
-  fetch(`/pdf/${encodeURIComponent(pdfName)}?${qs}`, { method: "HEAD" }).then(r => {
+  const filename = current;
+  const url = window.md2pdfUrl(`/pdf/${encodeURIComponent(pdfName)}?${qs}`);
+  fetch(url, { method: "HEAD" }).then(r => {
+    if (current !== filename) return;
     const fr = document.getElementById("pdf-frame"), ph = document.getElementById("pdf-ph");
-    if (r.ok) { fr.src = `/pdf/${encodeURIComponent(pdfName)}?${qs}`; fr.style.display = "block"; ph.style.display = "none"; }
-  });
+    if (r.ok) { fr.src = url; fr.style.display = "block"; ph.style.display = "none"; document.getElementById('btn-download-pdf').disabled = false; }
+  }).catch(() => setStatus('Could not load PDF. Try compiling again.', 'err'));
 }
 
 // ── keyboard ──────────────────────────────────────────────────────────────────
@@ -761,6 +875,7 @@ window.markdownChat = {
     clearTimeout(autoTimer);
     cm.setOption('readOnly', value);
     ['file-select', 's-in', 'btn-save', 'btn-compile'].forEach(id => document.getElementById(id).disabled = value || !current);
+    ['btn-new', 'btn-open'].forEach(id => document.getElementById(id).disabled = value);
   },
   updated(data) {
     const scroll = cm.getScrollInfo();
@@ -774,13 +889,14 @@ window.markdownChat = {
 
 // ── init ──────────────────────────────────────────────────────────────────────
 loadPrefs();
-loadFiles();
+loadFiles().catch(error => setStatus(error.message, 'err'));
 </script>
-<script src="/static/chat.js"></script>
-<script src="/static/share.js"></script>
+<script src="__APP_BASE__/static/files.js"></script>
+<script src="__APP_BASE__/static/chat.js"></script>
+<script src="__APP_BASE__/static/share.js"></script>
 </body>
 </html>
 """
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=2380, debug=True)
+    app.run(host="127.0.0.1", port=2380, debug=not app.config.get("MD2PDF_HOSTED"))

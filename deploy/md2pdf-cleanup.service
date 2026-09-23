@@ -1,0 +1,14 @@
+[Unit]
+Description=Remove expired md2pdf workspaces
+
+[Service]
+Type=oneshot
+User=md2pdf
+Group=md2pdf
+WorkingDirectory=/opt/md2pdf
+EnvironmentFile=/etc/md2pdf.env
+ExecStart=/opt/md2pdf/.venv/bin/python -m services.workspaces --cleanup
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/md2pdf
