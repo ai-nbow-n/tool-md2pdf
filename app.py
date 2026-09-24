@@ -660,7 +660,7 @@ body {
 </dialog>
 
 <!-- EDITOR -->
-<div id="editor-pane">
+<div id="editor-pane" tabindex="-1">
   <div class="pane-bar"><button id="fab" title="Toggle panel">&#x2699;</button><span>Editor</span></div>
   <div id="cm-wrap">
     <textarea id="editor"></textarea>
@@ -668,7 +668,7 @@ body {
 </div>
 
 <!-- PDF PREVIEW -->
-<div id="pdf-pane">
+<div id="pdf-pane" tabindex="-1">
   <div class="pane-bar"><span></span><span>PDF Preview</span></div>
   <div id="pdf-ph"><div class="icon">&#x1F4C4;</div><span>Compile to see preview</span></div>
   <iframe id="pdf-frame"></iframe>
@@ -727,6 +727,16 @@ function closePanel() { panel.classList.add("hidden");    fab.classList.add("act
 
 document.getElementById("btn-close").addEventListener("click", closePanel);
 fab.addEventListener("click", openPanel);
+
+// A dismissed sharing dialog returns to the document, rather than the mobile
+// controls above it. Focus the pane without opening the phone's keyboard.
+window.addEventListener('md2pdf:return-to-document', (event) => {
+  const target = document.getElementById(event.detail?.action === 'compile' ? 'pdf-pane' : 'editor-pane');
+  if (window.matchMedia('(max-width: 760px)').matches) closePanel();
+  cm.refresh();
+  target.focus({preventScroll: true});
+  target.scrollIntoView({block: 'start', behavior: 'instant'});
+});
 
 // ── prefs ─────────────────────────────────────────────────────────────────────
 const KEY = "md2pdf-editor";

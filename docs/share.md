@@ -50,6 +50,11 @@ The desktop client uses `md2pdf-desktop`. Sharing needs an internet connection.
    even when the settings panel is hidden on a phone. It reports success only
    after receiving a valid receipt from the sharing window.
 
+After a confirmed share, the review window closes and returns to md2pdf with
+the receipt visible. Closing the confirmation or result dialog returns to the
+Markdown editor after **Save**, or the PDF preview after **Compile**. On a phone,
+the settings panel folds away so the document is visible.
+
 Failures appear in the same dialog, including the explanation from nbow.io.
 If the connection fails after sending, or the window closes without a result,
 md2pdf says that sharing could not be confirmed; it does not claim that nothing

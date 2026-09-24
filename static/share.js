@@ -60,6 +60,9 @@
 	let closedTimer = null;
 	let sharedContent = null;
 	let offeredContent = null;
+	let offeredAction = "save";
+	let sharingAction = "save";
+	let resultAction = "save";
 	let handedOff = false;
 	let resultReceived = false;
 	const confirmation = document.getElementById("share-confirm");
@@ -81,6 +84,7 @@
 	}
 
 	function showResult(title, message, state, receipt = null) {
+		resultAction = sharingAction;
 		status(message, state);
 		resultDialog.dataset.state = state;
 		document.getElementById("share-result-title").textContent = title;
@@ -144,6 +148,19 @@
 		cleanup();
 	}
 
+	function returnToDocument(action) {
+		window.dispatchEvent(new CustomEvent("md2pdf:return-to-document", { detail: { action } }));
+	}
+
+	function finishSharing() {
+		// The receipt/result is already visible in this app. Closing the
+		// script-opened review tab returns mobile browsers to this same draft.
+		const completedPopup = popup;
+		cleanup();
+		try { completedPopup?.close(); } catch (_) { /* The result remains in both windows. */ }
+		try { window.focus(); } catch (_) { /* Some browsers choose focus themselves. */ }
+	}
+
 	window.addEventListener("message", (event) => {
 		// Three checks, all required: the right origin, the window we actually
 		// opened, and our own protocol marker. Any page may post to us.
@@ -192,8 +209,10 @@
 			if (data.ok === true && handedOff && typeof data.receipt === "string" && RECEIPT_PATTERN.test(data.receipt)) {
 				showReceipt(data.receipt);
 				showResult("Shared with nbow.io", "The document was stored in the nbow.io corpus. Keep this receipt to request deletion later.", "ok", data.receipt);
+				finishSharing();
 			} else {
 				showFailure(data.ok === true ? {outcome: "unknown"} : data);
+				if (data.error === "cancelled") finishSharing();
 			}
 			return;
 		}
@@ -201,7 +220,7 @@
 		if (data.type === "closed") popupClosed();
 	});
 
-	function openSharing(content) {
+	function openSharing(content, action = "save") {
 		if (!content || !content.trim()) {
 			status("Open a Markdown file first.", "error");
 			return false;
@@ -212,6 +231,7 @@
 		}
 		cleanup();
 		sharedContent = content;
+		sharingAction = action;
 
 		const url = `${shareBase}/${language()}/products/aiconsulting/code-agents/share`;
 		// No `noopener` in the feature string, in any form: the handshake needs
@@ -244,19 +264,27 @@
 		const content = event.detail?.content;
 		if (!confirmation || typeof content !== "string" || !content.trim()) return;
 		offeredContent = content;
+		offeredAction = event.detail.action === "compile" ? "compile" : "save";
 		status("Nothing is shared with the corpus until you confirm on nbow.io.", "");
 		document.getElementById("share-confirm-result").textContent =
 			event.detail.action === "compile" ? "Compiled OK" : "Saved";
 		if (!confirmation.open) confirmation.showModal();
 	});
 	document.getElementById("share-confirm-open").addEventListener("click", () => {
-		if (openSharing(offeredContent)) confirmation.close();
+		if (openSharing(offeredContent, offeredAction)) confirmation.close();
 	});
 	document.getElementById("share-confirm-cancel").addEventListener("click", () => {
 		confirmation.close();
 	});
-	confirmation.addEventListener("close", () => { offeredContent = null; });
+	confirmation.addEventListener("close", () => {
+		if (confirmation.open) return;
+		offeredContent = null;
+		if (!resultDialog.open) returnToDocument(offeredAction);
+	});
 	document.getElementById("share-result-close").addEventListener("click", () => resultDialog.close());
+	resultDialog.addEventListener("close", () => {
+		if (!resultDialog.open && !confirmation.open) returnToDocument(resultAction);
+	});
 	document.getElementById("share-result-copy").addEventListener("click", async () => {
 		const receiptNode = document.getElementById("share-result-receipt");
 		const copyStatus = document.getElementById("share-result-copy-status");

@@ -116,13 +116,37 @@ class ShareUiTests(unittest.TestCase):
         self.assertEqual(corpus_requests, [])
         self.assertEqual(page.evaluate("shareGestures"), [])
 
+    def open_controls(self, page):
+        if "hidden" in (page.locator("#panel").get_attribute("class") or "").split():
+            page.locator("#fab").click()
+        expect(page.locator("#panel")).not_to_have_class("hidden")
+
+    def assert_document_returned(self, page, profile, action, content):
+        self.assertEqual(page.evaluate("cm.getValue()"), content)
+        self.assertEqual(page.evaluate("current"), "document.md")
+        target = page.locator("#pdf-pane" if action == "compile" else "#editor-pane")
+        expect(target).to_be_focused()
+        if profile == "phone":
+            expect(page.locator("#panel")).to_have_class("hidden")
+            expect(target).to_be_in_viewport(ratio=0.95)
+            # Returning to the document must not reopen the phone keyboard.
+            self.assertNotEqual(page.evaluate("document.activeElement.tagName"), "TEXTAREA")
+
+    def compile_test_pdf(self, command, **_kwargs):
+        source = Path(command[command.index("--hosted") - 1])
+        output = Path(command[command.index("--output-dir") + 1])
+        (output / source.with_suffix(".pdf").name).write_bytes(b"%PDF-1.4\nMobile return test")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
     def test_manual_save_compile_and_repeat_save_ask_on_desktop_and_phone(self):
+        self.compiler.side_effect = self.compile_test_pdf
         for profile in PROFILES:
             with self.subTest(profile=profile), self.editor_page(profile) as (page, requests):
                 content = "# Saved locally\n\nKeep this private unless I share it.\n"
                 page.evaluate("text => cm.setValue(text)", content)
                 modal = page.locator("#share-confirm")
                 for action in ("save", "compile", "save"):
+                    self.open_controls(page)
                     page.locator("#btn-" + action).click()
                     expect(modal).to_be_visible()
                     self.assertIn("nbow.io", modal.inner_text())
@@ -135,8 +159,13 @@ class ShareUiTests(unittest.TestCase):
                         page.locator("#share-confirm-cancel").click()
                     expect(modal).to_be_hidden()
                     self.assert_no_sharing(page, requests)
+                    self.assert_document_returned(page, profile, action, content)
+                    if action == "compile":
+                        expect(page.locator("#pdf-frame")).to_be_visible()
+                        self.assertIn("/pdf/document.pdf?", page.locator("#pdf-frame").get_attribute("src"))
 
                 # Actual autosave runs after an editor change, with no offer.
+                self.open_controls(page)
                 page.locator("label.toggle:has(#s-auto)").click()
                 expect(page.locator("#s-auto")).to_be_checked()
                 automatic = content + "\nAutosaved change.\n"
@@ -146,6 +175,63 @@ class ShareUiTests(unittest.TestCase):
                 self.assertEqual(page.request.get(
                     self.origin + PREFIX + "/api/file/document.md").text(), automatic)
                 self.assert_no_sharing(page, requests)
+
+    def test_success_closes_review_and_returns_to_saved_or_compiled_document(self):
+        self.compiler.side_effect = self.compile_test_pdf
+        receipt = "ABCDE-12345-FGHJK-67890"
+        for profile in PROFILES:
+            for action in ("save", "compile", "direct"):
+                with self.subTest(profile=profile, action=action), self.editor_page(profile) as (page, requests):
+                    content = "# Return to my document\n\nKeep this text after sharing.\n"
+                    page.evaluate("text => cm.setValue(text)", content)
+                    if action != "direct":
+                        page.locator("#btn-" + action).click()
+                        expect(page.locator("#share-confirm")).to_be_visible()
+                    with page.expect_popup() as event:
+                        page.locator("#share-open" if action == "direct" else "#share-confirm-open").click()
+                    popup = event.value
+                    popup.wait_for_load_state()
+                    popup.evaluate("sendReady()")
+                    popup.wait_for_function("receivedDocuments.length === 1")
+                    self.assertEqual(popup.evaluate("receivedDocuments[0].content"), content)
+
+                    # The application must close the review tab itself once it
+                    # has received the receipt; manually closing it hid the bug.
+                    with popup.expect_event("close"):
+                        popup.evaluate("receipt => sendResult({ok: true, receipt, outcome: 'stored'})", receipt)
+                    expect(page.locator("#share-result")).to_be_visible()
+                    expect(page.locator("#share-result-receipt")).to_have_text(receipt)
+                    page.locator("#share-result-close").click()
+                    expect(page.locator("#share-result")).to_be_hidden()
+                    self.assert_document_returned(page, profile, action, content)
+                    if action == "compile":
+                        expect(page.locator("#pdf-frame")).to_be_visible()
+                        self.assertTrue(page.request.get(
+                            self.origin + PREFIX + "/pdf/document.pdf").body().startswith(b"%PDF"))
+                    self.assertEqual(requests, [])
+
+    def test_cancelled_review_returns_to_phone_document_without_claiming_it_was_shared(self):
+        self.compiler.side_effect = self.compile_test_pdf
+        for action in ("save", "compile"):
+            with self.subTest(action=action), self.editor_page("phone") as (page, requests):
+                content = "# Keep my saved document\n\nI chose not to share.\n"
+                page.evaluate("text => cm.setValue(text)", content)
+                page.locator("#btn-" + action).click()
+                expect(page.locator("#share-confirm")).to_be_visible()
+                with page.expect_popup() as event:
+                    page.locator("#share-confirm-open").click()
+                popup = event.value
+                popup.wait_for_load_state()
+                popup.evaluate("sendReady()")
+                popup.wait_for_function("receivedDocuments.length === 1")
+                with popup.expect_event("close"):
+                    popup.evaluate("sendResult({ok: false, error: 'cancelled', outcome: 'not_sent', message: 'Nothing was sent.'})")
+                expect(page.locator("#share-result-title")).to_have_text("Not shared with nbow.io")
+                expect(page.locator("#share-result-receipt")).to_be_hidden()
+                page.keyboard.press("Escape")
+                expect(page.locator("#share-result")).to_be_hidden()
+                self.assert_document_returned(page, "phone", action, content)
+                self.assertEqual(requests, [])
 
     def test_confirmed_snapshot_survives_edits_while_the_popup_loads(self):
         for profile in PROFILES:
@@ -194,17 +280,21 @@ class ShareUiTests(unittest.TestCase):
                 expect(page.locator("#share-receipt")).to_be_visible()
                 expect(page.locator("#share-receipt")).to_have_text(receipt)
                 expect(page.locator("#share-result")).to_be_visible()
+                self.assertTrue(popup.is_closed())
                 page.locator("#share-result-close").click()
+                expect(page.locator("#editor-pane")).to_be_focused()
                 self.assertEqual(requests, [])
-                popup.close()
 
                 # Merely offering another share must keep the previous receipt.
                 for action in ("save", "compile"):
+                    self.open_controls(page)
                     page.locator("#btn-" + action).click()
                     expect(page.locator("#share-confirm")).to_be_visible()
                     expect(page.locator("#share-receipt")).to_have_text(receipt)
                     page.keyboard.press("Escape")
                     expect(page.locator("#share-confirm")).to_be_hidden()
+                    expect(page.locator("#pdf-pane" if action == "compile" else "#editor-pane")).to_be_focused()
+                    self.open_controls(page)
                     expect(page.locator("#share-receipt")).to_be_visible()
                     expect(page.locator("#share-receipt")).to_have_text(receipt)
                     self.assertEqual(requests, [])
@@ -213,6 +303,7 @@ class ShareUiTests(unittest.TestCase):
                 # frozen at the click instead of at the remote handshake.
                 unsaved = "# Explicit unsaved share\n"
                 page.evaluate("text => cm.setValue(text)", unsaved)
+                self.open_controls(page)
                 with page.expect_popup() as event:
                     page.locator("#share-open").click()
                 popup = event.value
@@ -321,7 +412,7 @@ class ShareUiTests(unittest.TestCase):
                 expect(page.locator("#share-result-copy-status")).to_have_text("Receipt copied.")
                 self.assertEqual(page.evaluate("copiedReceipt"), receipt)
                 page.locator("#share-result-close").click()
-                popup.close()
+                self.assertTrue(popup.is_closed())
 
                 # Each later attempt gets its own result. The previous receipt
                 # remains available and explicitly belongs to the last success.
@@ -357,6 +448,7 @@ class ShareUiTests(unittest.TestCase):
                         expect(page.locator("#share-result-copy")).to_be_hidden()
                         expect(page.locator("#share-receipt")).to_have_text(receipt)
                         expect(page.locator("#share-receipt-label")).to_have_text("Last confirmed receipt")
+                        self.assertFalse(popup.is_closed())
                         self.assertEqual(requests, [])
                         page.locator("#share-result-close").click()
                         popup.close()
@@ -434,6 +526,8 @@ class ShareUiTests(unittest.TestCase):
                 self.assertEqual(page.evaluate("shareGestures"), [True])
                 self.assertEqual(requests, [])
                 page.locator("#share-confirm-cancel").click()
+                self.assert_document_returned(page, profile, "save", "# Do not send automatically")
+                self.open_controls(page)
                 page.locator("#btn-save").click()
                 expect(page.locator("#share-confirm")).to_be_visible()
                 page.locator("#share-confirm-cancel").click()
