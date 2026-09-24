@@ -77,6 +77,7 @@
     'Not shared. See the nbow.io window for the reason.': ['Nicht geteilt. Den Grund nennt das nbow.io-Fenster.', 'No se compartió. El motivo está en la ventana de nbow.io.'],
     'Your browser blocked the window. Allow popups for this page.': ['Ihr Browser hat das Fenster blockiert. Erlauben Sie Popups für diese Seite.', 'Su navegador bloqueó la ventana. Permita las ventanas emergentes en esta página.'],
     'The sharing window did not respond. Nothing was sent.': ['Das Fenster zum Teilen hat nicht geantwortet. Es wurde nichts gesendet.', 'La ventana para compartir no respondió. No se envió nada.'],
+    'Sending to nbow.io…': ['Wird an nbow.io gesendet…', 'Enviando a nbow.io…'],
     'Shared with nbow.io': ['Mit nbow.io geteilt', 'Compartido con nbow.io'],
     'Not shared with nbow.io': ['Nicht mit nbow.io geteilt', 'No se compartió con nbow.io'],
     'Sharing could not be confirmed': ['Das Teilen konnte nicht bestätigt werden', 'No se pudo confirmar si se compartió'],

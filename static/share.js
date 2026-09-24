@@ -178,6 +178,13 @@
 			return;
 		}
 
+		if (data.type === "sending" && handedOff) {
+			resultReceived = false;
+			if (resultDialog.open) resultDialog.close();
+			status("Sending to nbow.io…", "");
+			return;
+		}
+
 		if (data.type === "result") {
 			if (readyTimer) clearTimeout(readyTimer);
 			readyTimer = null;

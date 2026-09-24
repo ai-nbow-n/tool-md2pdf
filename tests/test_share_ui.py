@@ -396,6 +396,26 @@ class ShareUiTests(unittest.TestCase):
                     page.locator("#share-result-close").click()
                     self.assertEqual(requests, [])
 
+    def test_closing_during_retry_does_not_keep_a_previous_rejection(self):
+        for profile in PROFILES:
+            with self.subTest(profile=profile), self.editor_page(profile) as (page, requests):
+                page.evaluate("cm.setValue('# Explicit retry')")
+                with page.expect_popup() as event:
+                    page.locator("#share-open").click()
+                popup = event.value
+                popup.wait_for_load_state()
+                popup.evaluate("sendReady()")
+                popup.wait_for_function("receivedDocuments.length === 1")
+                popup.evaluate("sendResult({ok: false, error: 'hourly_limit_reached', outcome: 'not_sent'})")
+                expect(page.locator("#share-result-title")).to_have_text("Not shared with nbow.io")
+                popup.evaluate("window.opener.postMessage({source: 'nbow-corpus-share', type: 'sending'}, '*')")
+                expect(page.locator("#share-result")).to_be_hidden()
+                expect(page.locator("#share-status")).to_have_text("Sending to nbow.io…")
+                popup.close()
+                expect(page.locator("#share-result")).to_be_visible()
+                expect(page.locator("#share-result-title")).to_have_text("Sharing could not be confirmed")
+                self.assertEqual(requests, [])
+
     def test_blocked_popup_never_sends_and_the_next_save_asks_again(self):
         for profile in PROFILES:
             with self.subTest(profile=profile), self.editor_page(profile) as (page, requests):
