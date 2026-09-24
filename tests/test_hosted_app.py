@@ -205,6 +205,7 @@ class HostedAppTests(unittest.TestCase):
                         page.evaluate("text => cm.setValue(text)", edited)
                         page.locator("#btn-save").click()
                         page.wait_for_function("!dirty && document.getElementById('status-msg').textContent === 'Saved'")
+                        page.locator("#share-confirm-cancel").click()
                         self.assertEqual(page.request.get(origin + PREFIX + "/api/file/trip.md").text(), edited)
 
                         page.locator("#api-key").fill("browser-test-key")
@@ -222,6 +223,7 @@ class HostedAppTests(unittest.TestCase):
                         page.locator("#btn-compile").click()
                         page.wait_for_function("!document.getElementById('btn-download-pdf').disabled", timeout=60000)
                         self.assertEqual(page.locator("#status-msg").inner_text(), "Compiled OK")
+                        page.locator("#share-confirm-cancel").click()
                         with page.expect_download() as pdf_event:
                             page.locator("#btn-download-pdf").click()
                         pdf = pdf_event.value

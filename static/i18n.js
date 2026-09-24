@@ -62,6 +62,10 @@
     'Compiled OK': ['Erfolgreich kompiliert', 'Compilado correctamente'],
     'Chat edits saved — compile to update PDF': ['Chat-Änderungen gespeichert — zum Aktualisieren des PDFs kompilieren', 'Cambios del chat guardados — compila para actualizar el PDF'],
     'Share with nbow.io': ['Mit nbow.io teilen', 'Compartir con nbow.io'],
+    'Share this Markdown with nbow.io?': ['Dieses Markdown mit nbow.io teilen?', '¿Compartir este Markdown con nbow.io?'],
+    'Sharing with the research corpus is optional. Review the exact Markdown and confirm on nbow.io before it is submitted. Saving or compiling alone does not share it with the corpus.': ['Das Teilen mit dem Forschungskorpus ist freiwillig. Prüfen Sie den genauen Markdown-Text und bestätigen Sie auf nbow.io, bevor er eingereicht wird. Speichern oder Kompilieren allein teilt ihn nicht mit dem Korpus.', 'Compartir con el corpus de investigación es opcional. Revise el Markdown exacto y confirme en nbow.io antes de enviarlo. Guardar o compilar por sí solo no lo comparte con el corpus.'],
+    'Not now': ['Jetzt nicht', 'Ahora no'],
+    'Review and share': ['Prüfen und teilen', 'Revisar y compartir'],
     'Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.': ['Freiwillig. Steuern Sie dieses Dokument zum öffentlichen Markdown-Korpus bei, für die Forschung darüber, wie technische Dokumente geschrieben werden.', 'Opcional. Aporte este documento al corpus público de Markdown, para investigar cómo se escriben los documentos técnicos.'],
     'A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.': ['Es öffnet sich ein Fenster auf nbow.io. Es zeigt Ihnen den genauen Text, bittet zweimal um Bestätigung und sendet ihn erst dann. Der Dateiname wird nie gesendet. Drei Dokumente pro Stunde.', 'Se abre una ventana en nbow.io. Le muestra el texto exacto, le pide confirmar dos veces y solo entonces lo envía. El nombre del archivo nunca se envía. Tres documentos por hora.'],
     'Nothing is sent until you confirm on nbow.io.': ['Es wird nichts gesendet, bis Sie auf nbow.io bestätigen.', 'No se envía nada hasta que confirme en nbow.io.'],
@@ -110,7 +114,7 @@
     originals.set(node, records);
     if (value !== rendered) write(rendered);
   }
-  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status'];
+  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status', 'share-confirm'];
   function render() {
     observer.disconnect();
     document.documentElement.lang = language;

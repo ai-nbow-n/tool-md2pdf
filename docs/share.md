@@ -4,11 +4,18 @@ Optional. md2pdf works if you never press the button. Saving and compiling in
 the hosted editor processes your text on nbow.io, in a temporary workspace;
 it does not contribute that text to the research corpus. See [hosting.md](hosting.md).
 
-The **Share with nbow.io** button in the settings panel contributes the document
+After a successful manual **Save** or **Compile**, desktop and mobile browsers
+show the same optional sharing dialog. **Not now** (or Escape) dismisses it;
+**Review and share** opens the nbow.io review window from your click or tap.
+Auto-save and other background saves never open a sharing window or submit a
+document. A previous submission does not opt you into future sharing.
+
+The **Share with nbow.io** button in the settings panel also offers the document
 you have open to a public research corpus about how technical Markdown is
 written — how long documents get, which features are actually used, where
-converters break. What is collected, kept and deleted is described on
-<https://nbow.io/en/products/aiconsulting/code-agents#markdown-corpus>.
+converters break. What is collected, kept and deleted is described in
+the expandable **Markdown corpus** information inside md2pdf:
+<https://nbow.io/en/products/aiconsulting/code-agents/md2pdf/#markdown-corpus>.
 
 ## Why it opens a window instead of posting
 
@@ -27,7 +34,8 @@ The desktop client uses `md2pdf-desktop`. Sharing needs an internet connection.
 
 ## What happens, in order
 
-1. You press **Share with nbow.io**. A window opens at
+1. You press **Share with nbow.io**, or **Review and share** after saving or
+   compiling. A window opens at
    `<share base>/<language>/products/aiconsulting/code-agents/share`. The
    language follows the panel's own selector.
 2. That window says it is ready. Only then does md2pdf post it the document.
@@ -46,7 +54,11 @@ optional flow is the only way to donate them to the corpus.
 
 ## What is sent
 
-The editor's current text, including unsaved changes. That is all.
+After Save/Compile, the text saved for that operation. From the direct Share
+button, the editor's current text, including unsaved changes. The snapshot is
+fixed when you choose to share; edits made while the review window loads cannot
+replace it. The review window still requires fresh acknowledgements and **Send**
+for each document, even when a submission grant already exists.
 
 **The file name is never sent.** `window.markdownChat.snapshot()` returns the
 file name, the input directory and the disk revision alongside the content, and

@@ -44,11 +44,17 @@
 
 	let popup = null;
 	let readyTimer = null;
+	let sharedContent = null;
+	let offeredContent = null;
+	let handedOff = false;
+	const confirmation = document.getElementById("share-confirm");
 
 	function status(message, state) {
 		const node = document.getElementById("share-status");
 		node.textContent = message;
 		node.dataset.state = state || "";
+		const error = document.getElementById("share-confirm-error");
+		if (error) error.textContent = state === "error" ? message : "";
 	}
 
 	function showReceipt(receipt) {
@@ -79,6 +85,8 @@
 		if (readyTimer) clearTimeout(readyTimer);
 		readyTimer = null;
 		popup = null;
+		sharedContent = null;
+		handedOff = false;
 	}
 
 	window.addEventListener("message", (event) => {
@@ -90,8 +98,11 @@
 		if (!data || data.source !== MESSAGE_SOURCE_IN) return;
 
 		if (data.type === "ready") {
+			// One handoff per explicit choice. Reloads and "share another" may
+			// never pick up a later draft or resubmit the previous document.
+			if (handedOff || sharedContent === null) return;
 			if (readyTimer) clearTimeout(readyTimer);
-			const content = currentContent();
+			const content = sharedContent;
 			if (!content) {
 				status("Open a Markdown file first.", "error");
 				return;
@@ -106,6 +117,7 @@
 				},
 				shareOrigin,
 			);
+			handedOff = true;
 			status("Waiting for your confirmation in the nbow.io window…", "");
 			return;
 		}
@@ -124,29 +136,34 @@
 		if (data.type === "closed") cleanup();
 	});
 
-	button.addEventListener("click", () => {
-		if (!currentContent()) {
+	function openSharing(content) {
+		if (!content || !content.trim()) {
 			status("Open a Markdown file first.", "error");
-			return;
+			return false;
 		}
 
 		showReceipt(null);
 
 		if (popup && !popup.closed) {
-			popup.focus();
-			status("The sharing window is already open.", "");
-			return;
+			popup.close();
 		}
+		cleanup();
+		sharedContent = content;
 
 		const url = `${shareBase}/${language()}/products/aiconsulting/code-agents/share`;
 		// No `noopener` in the feature string, in any form: the handshake needs
 		// window.opener on the other side, and a browser that parsed a
 		// `noopener=no` token as "on" would break it in a way that looks like
 		// the window simply never answering.
-		popup = window.open(url, "nbow-corpus-share", "width=780,height=880");
+		// Called only from a click/tap, never after an awaited save/compile:
+		// mobile browsers require this user gesture to open the review window.
+		// A fresh window also avoids reusing a timed-out popup whose delayed
+		// unload message could otherwise cancel this new handoff.
+		popup = window.open(url, "_blank", "width=780,height=880");
 		if (!popup) {
 			status("Your browser blocked the window. Allow popups for this page.", "error");
-			return;
+			cleanup();
+			return false;
 		}
 
 		status("Opening the nbow.io sharing window…", "");
@@ -154,7 +171,27 @@
 			status("The sharing window did not respond. Nothing was sent.", "error");
 			cleanup();
 		}, READY_TIMEOUT_MS);
+		return true;
+	}
+
+	button.addEventListener("click", () => openSharing(currentContent()));
+
+	window.addEventListener("md2pdf:share-offer", (event) => {
+		const content = event.detail?.content;
+		if (!confirmation || typeof content !== "string" || !content.trim()) return;
+		offeredContent = content;
+		status("Nothing is shared with the corpus until you confirm on nbow.io.", "");
+		document.getElementById("share-confirm-result").textContent =
+			event.detail.action === "compile" ? "Compiled OK" : "Saved";
+		if (!confirmation.open) confirmation.showModal();
 	});
+	document.getElementById("share-confirm-open").addEventListener("click", () => {
+		if (openSharing(offeredContent)) confirmation.close();
+	});
+	document.getElementById("share-confirm-cancel").addEventListener("click", () => {
+		confirmation.close();
+	});
+	confirmation.addEventListener("close", () => { offeredContent = null; });
 
 	status("Nothing is shared with the corpus until you confirm on nbow.io.", "");
 })();

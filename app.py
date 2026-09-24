@@ -238,6 +238,7 @@ PAGE = r"""<!DOCTYPE html>
   href="__APP_BASE__/static/vendor/codemirror/dracula.min.css">
 <script src="__APP_BASE__/static/vendor/codemirror/codemirror.min.js"></script>
 <script src="__APP_BASE__/static/vendor/codemirror/markdown.min.js"></script>
+<link rel="stylesheet" href="__APP_BASE__/static/corpus-info.css">
 <style>
 :root {
   --panel-w: 272px;
@@ -365,6 +366,19 @@ body {
   letter-spacing: .04em; user-select: all; word-break: break-all;
 }
 #share-receipt[hidden] { display: none; }
+#share-confirm {
+  margin: auto; padding: 24px; width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px); overflow-y: auto;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 8px 36px #0006;
+}
+#share-confirm::backdrop { background: #0009; }
+#share-confirm h2 { font-size: 19px; margin-bottom: 14px; }
+#share-confirm p { font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+#share-confirm .share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#share-confirm .btn { min-height: 44px; white-space: normal; }
+#share-confirm-cancel { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+#share-confirm-open { background: var(--accent); color: var(--crust); }
 #api-connect { background: var(--accent); color: var(--crust); }
 #chat-bubble {
   position: fixed; bottom: 20px; right: 20px; z-index: 50;
@@ -617,6 +631,17 @@ body {
 </div>
 
 
+<dialog id="share-confirm" aria-labelledby="share-confirm-title" aria-describedby="share-confirm-body">
+  <h2 id="share-confirm-title">Share this Markdown with nbow.io?</h2>
+  <p id="share-confirm-result"></p>
+  <p id="share-confirm-body">Sharing with the research corpus is optional. Review the exact Markdown and confirm on nbow.io before it is submitted. Saving or compiling alone does not share it with the corpus.</p>
+  <p id="share-confirm-error" role="status"></p>
+  <div class="share-actions">
+    <button type="button" class="btn" id="share-confirm-cancel" autofocus>Not now</button>
+    <button type="button" class="btn" id="share-confirm-open">Review and share</button>
+  </div>
+</dialog>
+
 <!-- EDITOR -->
 <div id="editor-pane">
   <div class="pane-bar"><button id="fab" title="Toggle panel">&#x2699;</button><span>Editor</span></div>
@@ -658,6 +683,7 @@ window.md2pdfUrl = path => document.querySelector('meta[name="md2pdf-base"]').co
 <script>
 const hosted = document.body.dataset.hosted === 'true';
 let current = null, diskRevision = null, chatApplying = false, savePending = null, dirty = false, autoTimer = null, fontStyle = 'default', fontSize = '10', pageSize = 'A4', docStyle = 'plain';
+let savedDocument = null, compiling = false;
 
 // ── CodeMirror ────────────────────────────────────────────────────────────────
 const cm = CodeMirror.fromTextArea(document.getElementById("editor"), {
@@ -798,8 +824,14 @@ document.getElementById("file-select").addEventListener("change", e => openFile(
 // ── save ──────────────────────────────────────────────────────────────────────
 async function save(silent = false) {
   if (!current || chatApplying) return false;
-  if (savePending) return savePending;
-  const filename = current;
+  const filename = current, directory = inDir();
+  // A manual save must keep its own confirmation even if auto-save is in flight.
+  try {
+  while (savePending) {
+    if (!await savePending) return false;
+  }
+  } catch (_) { return false; } // The preceding save already reports its error.
+  if (current !== filename || inDir() !== directory || chatApplying) return false;
   const body = { content: cm.getValue(), disk_revision: diskRevision };
   if (inDir()) body.dir = inDir();
   savePending = (async () => {
@@ -808,8 +840,12 @@ async function save(silent = false) {
   const data = await res.json();
   if (res.ok && current === filename && (inDir() || undefined) === body.dir) {
     diskRevision = data.disk_revision;
+    savedDocument = { filename, directory, content: body.content };
     if (cm.getValue() === body.content) markDirty(false);
-    if (!silent) setStatus("Saved", "ok");
+    if (!silent) {
+      setStatus("Saved", "ok");
+      window.dispatchEvent(new CustomEvent('md2pdf:share-offer', {detail: {content: body.content, action: 'save'}}));
+    }
   } else if (!res.ok) setStatus(data.error || "Save failed", "err");
   return res.ok;
   })();
@@ -821,25 +857,38 @@ document.getElementById("btn-save").addEventListener("click", () => save());
 
 // ── compile ───────────────────────────────────────────────────────────────────
 async function compile() {
-  if (!current || chatApplying) return;
-  if (!await save(true)) return;
-  setStatus("Compiling...", "busy");
+  if (!current || chatApplying || compiling) return;
+  const filename = current, directory = inDir();
+  compiling = true;
   document.getElementById("btn-compile").disabled = true;
+  try {
+  if (!await save(true)) return;
+  if (current !== filename || inDir() !== directory) return;
+  const compiledDocument = savedDocument;
+  if (!compiledDocument || compiledDocument.filename !== filename || compiledDocument.directory !== directory) return;
+  setStatus("Compiling...", "busy");
   const body = { filename: current, font_style: fontStyle, font_size: fontSize, page_size: pageSize, doc_style: docStyle };
   if (inDir())  body.input_dir  = inDir();
   if (outDir()) body.output_dir = outDir();
-  try {
   const data = await fetch(window.md2pdfUrl("/api/compile"),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
   ).then(r => r.json());
-  if (data.ok) { setStatus("Compiled OK", "ok"); refreshPdf(); }
+  if (data.ok) {
+    setStatus("Compiled OK", "ok"); refreshPdf();
+    if (current === filename && inDir() === directory) {
+      window.dispatchEvent(new CustomEvent('md2pdf:share-offer', {detail: {content: compiledDocument.content, action: 'compile'}}));
+    }
+  }
   else {
     const tail = (data.error || data.err || data.out || "error").split("\n").filter(Boolean).slice(-2).join(" | ");
     setStatus("Error -- " + tail, "err");
     console.error(data.out, data.err);
   }
   } catch (_) { setStatus("Could not compile. Check your connection and try again.", "err"); }
-  finally { document.getElementById("btn-compile").disabled = false; }
+  finally {
+    compiling = false;
+    document.getElementById("btn-compile").disabled = !current || chatApplying;
+  }
 }
 document.getElementById("btn-compile").addEventListener("click", compile);
 
@@ -894,6 +943,7 @@ loadFiles().catch(error => setStatus(error.message, 'err'));
 <script src="__APP_BASE__/static/files.js"></script>
 <script src="__APP_BASE__/static/chat.js"></script>
 <script src="__APP_BASE__/static/share.js"></script>
+<script src="__APP_BASE__/static/corpus-info.js"></script>
 </body>
 </html>
 """
