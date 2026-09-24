@@ -46,7 +46,14 @@ The desktop client uses `md2pdf-desktop`. Sharing needs an internet connection.
    word counts, and asks you to confirm two things: that you have read it, and
    that it contains no personal or confidential data.
 5. On **Send**, nbow.io stores the document and returns a receipt code. md2pdf
-   shows that code under the button so you can copy it before closing.
+   shows a **Shared with nbow.io** dialog with the receipt and a copy button,
+   even when the settings panel is hidden on a phone. It reports success only
+   after receiving a valid receipt from the sharing window.
+
+Failures appear in the same dialog, including the explanation from nbow.io.
+If the connection fails after sending, or the window closes without a result,
+md2pdf says that sharing could not be confirmed; it does not claim that nothing
+was stored. No failed or uncertain attempt is retried automatically.
 
 Nothing is submitted to the research corpus before step 5. The hosted editor
 already sends files to nbow.io for editing and conversion; this separate,
@@ -79,6 +86,9 @@ immediately, with no account and no consent needed.
 
 Keep the code if you might want the document withdrawn. Nobody can recover it
 for you, and without it nobody — including nbow — can tell which row is yours.
+The last confirmed receipt stays under the sharing button for the current tab
+session, including after later failed or cancelled attempts. A new confirmed
+share replaces it, so copy each receipt you want to keep.
 
 ## Limits
 

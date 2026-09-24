@@ -77,6 +77,27 @@
     'Not shared. See the nbow.io window for the reason.': ['Nicht geteilt. Den Grund nennt das nbow.io-Fenster.', 'No se compartió. El motivo está en la ventana de nbow.io.'],
     'Your browser blocked the window. Allow popups for this page.': ['Ihr Browser hat das Fenster blockiert. Erlauben Sie Popups für diese Seite.', 'Su navegador bloqueó la ventana. Permita las ventanas emergentes en esta página.'],
     'The sharing window did not respond. Nothing was sent.': ['Das Fenster zum Teilen hat nicht geantwortet. Es wurde nichts gesendet.', 'La ventana para compartir no respondió. No se envió nada.'],
+    'Shared with nbow.io': ['Mit nbow.io geteilt', 'Compartido con nbow.io'],
+    'Not shared with nbow.io': ['Nicht mit nbow.io geteilt', 'No se compartió con nbow.io'],
+    'Sharing could not be confirmed': ['Das Teilen konnte nicht bestätigt werden', 'No se pudo confirmar si se compartió'],
+    'The document was stored in the nbow.io corpus. Keep this receipt to request deletion later.': ['Das Dokument wurde im nbow.io-Korpus gespeichert. Bewahren Sie diesen Beleg auf, um später die Löschung anzufordern.', 'El documento se guardó en el corpus de nbow.io. Guarde este recibo para solicitar su eliminación más adelante.'],
+    'The server did not confirm whether this document was stored. Check the nbow.io window before trying again.': ['Der Server hat nicht bestätigt, ob dieses Dokument gespeichert wurde. Prüfen Sie das nbow.io-Fenster, bevor Sie es erneut versuchen.', 'El servidor no confirmó si se guardó este documento. Revise la ventana de nbow.io antes de volver a intentarlo.'],
+    'Nothing was sent to the corpus. Check the nbow.io window for details.': ['Es wurde nichts an den Korpus gesendet. Einzelheiten finden Sie im nbow.io-Fenster.', 'No se envió nada al corpus. Consulte los detalles en la ventana de nbow.io.'],
+    'The sharing window closed. Nothing was sent.': ['Das Fenster zum Teilen wurde geschlossen. Es wurde nichts gesendet.', 'Se cerró la ventana para compartir. No se envió nada.'],
+    'Sharing is temporarily unavailable. Nothing was sent.': ['Das Teilen ist vorübergehend nicht verfügbar. Es wurde nichts gesendet.', 'Compartir no está disponible temporalmente. No se envió nada.'],
+    'Sharing permission expired. Confirm your consent in the nbow.io window and try again.': ['Die Freigabe ist abgelaufen. Bestätigen Sie Ihre Einwilligung im nbow.io-Fenster und versuchen Sie es erneut.', 'El permiso para compartir caducó. Confirme su consentimiento en la ventana de nbow.io y vuelva a intentarlo.'],
+    'Confirm your consent in the nbow.io window before sharing.': ['Bestätigen Sie Ihre Einwilligung im nbow.io-Fenster, bevor Sie teilen.', 'Confirme su consentimiento en la ventana de nbow.io antes de compartir.'],
+    'The hourly sharing limit has been reached. Nothing was sent.': ['Das stündliche Limit zum Teilen wurde erreicht. Es wurde nichts gesendet.', 'Se alcanzó el límite de documentos por hora. No se envió nada.'],
+    'The sharing limit for this network has been reached. Nothing was sent.': ['Das Limit zum Teilen für dieses Netzwerk wurde erreicht. Es wurde nichts gesendet.', 'Se alcanzó el límite para compartir de esta red. No se envió nada.'],
+    'This document is too large to share. Nothing was sent.': ['Dieses Dokument ist zum Teilen zu groß. Es wurde nichts gesendet.', 'Este documento es demasiado grande para compartir. No se envió nada.'],
+    'This document is empty. Nothing was sent.': ['Dieses Dokument ist leer. Es wurde nichts gesendet.', 'Este documento está vacío. No se envió nada.'],
+    'This version of the app cannot share. Reload it and try again.': ['Diese App-Version kann nicht teilen. Laden Sie sie neu und versuchen Sie es erneut.', 'Esta versión de la aplicación no puede compartir. Recárguela y vuelva a intentarlo.'],
+    'The sharing request was refused. Nothing was sent.': ['Die Anfrage zum Teilen wurde abgelehnt. Es wurde nichts gesendet.', 'Se rechazó la solicitud para compartir. No se envió nada.'],
+    'Last confirmed receipt': ['Letzter bestätigter Beleg', 'Último recibo confirmado'],
+    'Copy receipt': ['Beleg kopieren', 'Copiar recibo'],
+    'Receipt copied.': ['Beleg kopiert.', 'Recibo copiado.'],
+    'Select and copy the receipt above.': ['Markieren und kopieren Sie den Beleg oben.', 'Seleccione y copie el recibo de arriba.'],
+    'Close': ['Schließen', 'Cerrar'],
   };
   const prefixes = {
     'Connected · ': ['Verbunden · ', 'Conectado · '],
@@ -114,7 +135,7 @@
     originals.set(node, records);
     if (value !== rendered) write(rendered);
   }
-  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status', 'share-confirm'];
+  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status', 'share-confirm', 'share-result'];
   function render() {
     observer.disconnect();
     document.documentElement.lang = language;

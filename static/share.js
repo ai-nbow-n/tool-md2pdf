@@ -27,6 +27,19 @@
 	const MESSAGE_SOURCE_OUT = "nbow-corpus-client";
 	/** Give up if the window never says hello — blocked, offline, or 404. */
 	const READY_TIMEOUT_MS = 20000;
+	const RECEIPT_PATTERN = /^[0-9A-HJKMNP-TV-Z]{5}(?:-[0-9A-HJKMNP-TV-Z]{5}){3}$/;
+	const UNKNOWN_MESSAGE = "The server did not confirm whether this document was stored. Check the nbow.io window before trying again.";
+	const FAILURE_MESSAGES = {
+		corpus_unavailable: "Sharing is temporarily unavailable. Nothing was sent.",
+		grant_required: "Sharing permission expired. Confirm your consent in the nbow.io window and try again.",
+		consent_required: "Confirm your consent in the nbow.io window before sharing.",
+		hourly_limit_reached: "The hourly sharing limit has been reached. Nothing was sent.",
+		network_limit_reached: "The sharing limit for this network has been reached. Nothing was sent.",
+		too_large: "This document is too large to share. Nothing was sent.",
+		empty_document: "This document is empty. Nothing was sent.",
+		unknown_client: "This version of the app cannot share. Reload it and try again.",
+		cross_site_request: "The sharing request was refused. Nothing was sent.",
+	};
 
 	const button = document.getElementById("share-open");
 	if (!button) return;
@@ -44,10 +57,13 @@
 
 	let popup = null;
 	let readyTimer = null;
+	let closedTimer = null;
 	let sharedContent = null;
 	let offeredContent = null;
 	let handedOff = false;
+	let resultReceived = false;
 	const confirmation = document.getElementById("share-confirm");
+	const resultDialog = document.getElementById("share-result");
 
 	function status(message, state) {
 		const node = document.getElementById("share-status");
@@ -61,6 +77,34 @@
 		const node = document.getElementById("share-receipt");
 		node.textContent = receipt || "";
 		node.hidden = !receipt;
+		document.getElementById("share-receipt-label").hidden = !receipt;
+	}
+
+	function showResult(title, message, state, receipt = null) {
+		status(message, state);
+		resultDialog.dataset.state = state;
+		document.getElementById("share-result-title").textContent = title;
+		document.getElementById("share-result-message").textContent = message;
+		const receiptNode = document.getElementById("share-result-receipt");
+		receiptNode.textContent = receipt || "";
+		receiptNode.hidden = !receipt;
+		document.getElementById("share-result-copy").hidden = !receipt;
+		document.getElementById("share-result-copy-status").textContent = "";
+		if (confirmation.open) confirmation.close();
+		if (!resultDialog.open) resultDialog.showModal();
+	}
+
+	function showFailure(data) {
+		const knownMessage = FAILURE_MESSAGES[data.error];
+		const notSent = data.outcome === "not_sent" ||
+			(data.outcome !== "unknown" && Boolean(knownMessage));
+		// Only the website window we opened can reach here. Render its localized
+		// explanation as bounded plain text, never as markup or a driver error.
+		const message = typeof data.message === "string" && data.message.trim()
+			? data.message.trim().slice(0, 1200)
+			: notSent ? knownMessage || "Nothing was sent to the corpus. Check the nbow.io window for details."
+				: UNKNOWN_MESSAGE;
+		showResult(notSent ? "Not shared with nbow.io" : "Sharing could not be confirmed", message, "error");
 	}
 
 	function language() {
@@ -83,10 +127,21 @@
 
 	function cleanup() {
 		if (readyTimer) clearTimeout(readyTimer);
+		if (closedTimer) clearInterval(closedTimer);
 		readyTimer = null;
+		closedTimer = null;
 		popup = null;
 		sharedContent = null;
 		handedOff = false;
+		resultReceived = false;
+	}
+
+	function popupClosed() {
+		if (!resultReceived) {
+			showFailure({outcome: handedOff ? "unknown" : "not_sent",
+				message: handedOff ? UNKNOWN_MESSAGE : "The sharing window closed. Nothing was sent."});
+		}
+		cleanup();
 	}
 
 	window.addEventListener("message", (event) => {
@@ -118,22 +173,25 @@
 				shareOrigin,
 			);
 			handedOff = true;
+			resultReceived = false;
 			status("Waiting for your confirmation in the nbow.io window…", "");
 			return;
 		}
 
 		if (data.type === "result") {
-			if (data.ok) {
-				status("Shared. Keep the receipt to have it deleted later.", "ok");
+			if (readyTimer) clearTimeout(readyTimer);
+			readyTimer = null;
+			resultReceived = true;
+			if (data.ok === true && handedOff && typeof data.receipt === "string" && RECEIPT_PATTERN.test(data.receipt)) {
 				showReceipt(data.receipt);
+				showResult("Shared with nbow.io", "The document was stored in the nbow.io corpus. Keep this receipt to request deletion later.", "ok", data.receipt);
 			} else {
-				status("Not shared. See the nbow.io window for the reason.", "error");
-				showReceipt(null);
+				showFailure(data.ok === true ? {outcome: "unknown"} : data);
 			}
 			return;
 		}
 
-		if (data.type === "closed") cleanup();
+		if (data.type === "closed") popupClosed();
 	});
 
 	function openSharing(content) {
@@ -141,8 +199,6 @@
 			status("Open a Markdown file first.", "error");
 			return false;
 		}
-
-		showReceipt(null);
 
 		if (popup && !popup.closed) {
 			popup.close();
@@ -167,8 +223,9 @@
 		}
 
 		status("Opening the nbow.io sharing window…", "");
+		closedTimer = setInterval(() => { if (popup?.closed) popupClosed(); }, 500);
 		readyTimer = setTimeout(() => {
-			status("The sharing window did not respond. Nothing was sent.", "error");
+			showFailure({outcome: "not_sent", message: "The sharing window did not respond. Nothing was sent."});
 			cleanup();
 		}, READY_TIMEOUT_MS);
 		return true;
@@ -192,6 +249,22 @@
 		confirmation.close();
 	});
 	confirmation.addEventListener("close", () => { offeredContent = null; });
+	document.getElementById("share-result-close").addEventListener("click", () => resultDialog.close());
+	document.getElementById("share-result-copy").addEventListener("click", async () => {
+		const receiptNode = document.getElementById("share-result-receipt");
+		const copyStatus = document.getElementById("share-result-copy-status");
+		try {
+			await navigator.clipboard.writeText(receiptNode.textContent);
+			copyStatus.textContent = "Receipt copied.";
+		} catch (_) {
+			const range = document.createRange();
+			range.selectNodeContents(receiptNode);
+			const selection = window.getSelection();
+			selection.removeAllRanges();
+			selection.addRange(range);
+			copyStatus.textContent = "Select and copy the receipt above.";
+		}
+	});
 
 	status("Nothing is shared with the corpus until you confirm on nbow.io.", "");
 })();

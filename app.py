@@ -366,17 +366,22 @@ body {
   letter-spacing: .04em; user-select: all; word-break: break-all;
 }
 #share-receipt[hidden] { display: none; }
-#share-confirm {
+#share-confirm, #share-result {
   margin: auto; padding: 24px; width: min(440px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px); overflow-y: auto;
   background: var(--surface); color: var(--text); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: 0 8px 36px #0006;
 }
-#share-confirm::backdrop { background: #0009; }
-#share-confirm h2 { font-size: 19px; margin-bottom: 14px; }
-#share-confirm p { font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
-#share-confirm .share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-#share-confirm .btn { min-height: 44px; white-space: normal; }
+#share-confirm::backdrop, #share-result::backdrop { background: #0009; }
+#share-confirm h2, #share-result h2 { font-size: 19px; margin-bottom: 14px; }
+#share-confirm p, #share-result p { font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+#share-confirm .share-actions, #share-result .share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#share-confirm .btn, #share-result .btn { min-height: 44px; white-space: normal; }
+#share-result[data-state=ok] h2 { color: var(--green); }
+#share-result[data-state=error] h2 { color: var(--red); }
+#share-result-receipt { display: block; padding: 12px; margin-bottom: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; user-select: all; overflow-wrap: anywhere; }
+#share-result-receipt[hidden], #share-result-copy[hidden] { display: none; }
+#share-result-close { background: var(--accent); color: var(--crust); }
 #share-confirm-cancel { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
 #share-confirm-open { background: var(--accent); color: var(--crust); }
 #api-connect { background: var(--accent); color: var(--crust); }
@@ -610,6 +615,7 @@ body {
     <p class="connection-note">Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.</p>
     <button class="btn" id="share-open" data-share-base="__SHARE_BASE__" data-client-id="__SHARE_CLIENT__" data-client-version="1">Share with nbow.io</button>
     <p id="share-status" class="connection-note" role="status"></p>
+    <p id="share-receipt-label" class="connection-note" hidden>Last confirmed receipt</p>
     <code id="share-receipt" class="connection-note" hidden></code>
     <p class="connection-note">A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.</p>
 
@@ -639,6 +645,17 @@ body {
   <div class="share-actions">
     <button type="button" class="btn" id="share-confirm-cancel" autofocus>Not now</button>
     <button type="button" class="btn" id="share-confirm-open">Review and share</button>
+  </div>
+</dialog>
+
+<dialog id="share-result" aria-labelledby="share-result-title" aria-describedby="share-result-message">
+  <h2 id="share-result-title"></h2>
+  <p id="share-result-message" role="status"></p>
+  <code id="share-result-receipt" hidden></code>
+  <p id="share-result-copy-status" role="status"></p>
+  <div class="share-actions">
+    <button type="button" class="btn" id="share-result-copy" hidden>Copy receipt</button>
+    <button type="button" class="btn" id="share-result-close" autofocus>Close</button>
   </div>
 </dialog>
 

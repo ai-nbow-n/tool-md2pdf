@@ -41,6 +41,9 @@ window.addEventListener('message', event => {
 window.sendReady = () => window.opener.postMessage({
   source: 'nbow-corpus-share', type: 'ready'
 }, '*');
+window.sendResult = result => window.opener.postMessage({
+  source: 'nbow-corpus-share', type: 'result', ...result
+}, '*');
 </script></body></html>"""
 
 
@@ -183,13 +186,15 @@ class ShareUiTests(unittest.TestCase):
                 popup.wait_for_function("processedReadies === 2")
                 self.assertEqual(popup.evaluate("receivedDocuments"), [payload])
 
-                receipt = "ABCDE-12345-FGHIJ-67890"
+                receipt = "ABCDE-12345-FGHJK-67890"
                 popup.evaluate("""receipt => window.opener.postMessage({
                   source: 'nbow-corpus-share', type: 'result', ok: true, receipt
                 }, '*')""", receipt)
                 expect(page.locator("#share-status")).to_have_attribute("data-state", "ok")
                 expect(page.locator("#share-receipt")).to_be_visible()
                 expect(page.locator("#share-receipt")).to_have_text(receipt)
+                expect(page.locator("#share-result")).to_be_visible()
+                page.locator("#share-result-close").click()
                 self.assertEqual(requests, [])
                 popup.close()
 
@@ -212,7 +217,7 @@ class ShareUiTests(unittest.TestCase):
                     page.locator("#share-open").click()
                 popup = event.value
                 popup.wait_for_load_state()
-                expect(page.locator("#share-receipt")).to_be_hidden()
+                expect(page.locator("#share-receipt")).to_have_text(receipt)
                 page.evaluate("cm.setValue('# Never approved')")
                 popup.evaluate("sendReady()")
                 popup.wait_for_function("receivedDocuments.length === 1")
@@ -285,6 +290,111 @@ class ShareUiTests(unittest.TestCase):
                 expect(page.locator("#share-confirm")).to_be_visible()
                 page.locator("#share-confirm-cancel").click()
                 self.assert_no_sharing(page, requests)
+
+    def test_share_result_is_visible_with_panel_collapsed_and_keeps_last_receipt(self):
+        receipt = "ABCDE-12345-FGHJK-67890"
+        for profile in PROFILES:
+            with self.subTest(profile=profile), self.editor_page(profile) as (page, requests):
+                page.evaluate("cm.setValue('# Explicit sharing outcome test')")
+                with page.expect_popup() as event:
+                    page.locator("#share-open").click()
+                popup = event.value
+                popup.wait_for_load_state()
+                popup.evaluate("sendReady()")
+                popup.wait_for_function("receivedDocuments.length === 1")
+                page.locator("#btn-close").click()
+                expect(page.locator("#panel")).to_have_class("hidden")
+
+                popup.evaluate("receipt => sendResult({ok: true, receipt, outcome: 'stored'})", receipt)
+                modal = page.locator("#share-result")
+                expect(modal).to_be_visible()
+                expect(page.locator("#share-result-title")).to_have_text("Shared with nbow.io")
+                expect(page.locator("#share-result-receipt")).to_have_text(receipt)
+                bounds = modal.bounding_box()
+                self.assertGreaterEqual(bounds["x"], 0)
+                self.assertLessEqual(bounds["x"] + bounds["width"], PROFILES[profile]["viewport"]["width"])
+                self.assertLessEqual(bounds["y"] + bounds["height"], PROFILES[profile]["viewport"]["height"])
+                page.evaluate("""() => Object.defineProperty(navigator, 'clipboard', {
+                  configurable: true, value: {writeText: async text => { window.copiedReceipt = text; }}
+                })""")
+                page.locator("#share-result-copy").click()
+                expect(page.locator("#share-result-copy-status")).to_have_text("Receipt copied.")
+                self.assertEqual(page.evaluate("copiedReceipt"), receipt)
+                page.locator("#share-result-close").click()
+                popup.close()
+
+                # Each later attempt gets its own result. The previous receipt
+                # remains available and explicitly belongs to the last success.
+                cases = [
+                    ({"ok": False, "error": "storage_unavailable", "outcome": "not_sent",
+                      "message": "Storage is unavailable. Nothing was stored."},
+                     "Not shared with nbow.io", "Storage is unavailable. Nothing was stored."),
+                    ({"ok": False, "error": "network_error", "outcome": "unknown",
+                      "message": "The connection was lost after sending. Storage could not be confirmed."},
+                     "Sharing could not be confirmed", "The connection was lost after sending. Storage could not be confirmed."),
+                    ({"ok": True, "receipt": "malformed-receipt"},
+                     "Sharing could not be confirmed", "The server did not confirm whether this document was stored."),
+                    ({"ok": False, "error": "corpus_unavailable"},
+                     "Not shared with nbow.io", "Sharing is temporarily unavailable. Nothing was sent."),
+                    ({"ok": False},
+                     "Sharing could not be confirmed", "The server did not confirm whether this document was stored."),
+                ]
+                for result, title, message in cases:
+                    with self.subTest(result=result):
+                        page.locator("#fab").click()
+                        with page.expect_popup() as event:
+                            page.locator("#share-open").click()
+                        popup = event.value
+                        popup.wait_for_load_state()
+                        popup.evaluate("sendReady()")
+                        popup.wait_for_function("receivedDocuments.length === 1")
+                        page.locator("#btn-close").click()
+                        popup.evaluate("result => sendResult(result)", result)
+                        expect(modal).to_be_visible()
+                        expect(page.locator("#share-result-title")).to_have_text(title)
+                        expect(page.locator("#share-result-message")).to_contain_text(message)
+                        expect(page.locator("#share-result-receipt")).to_be_hidden()
+                        expect(page.locator("#share-result-copy")).to_be_hidden()
+                        expect(page.locator("#share-receipt")).to_have_text(receipt)
+                        expect(page.locator("#share-receipt-label")).to_have_text("Last confirmed receipt")
+                        self.assertEqual(requests, [])
+                        page.locator("#share-result-close").click()
+                        popup.close()
+
+    def test_grant_failure_before_handoff_and_popup_close_have_explicit_outcomes(self):
+        for profile in PROFILES:
+            with self.subTest(profile=profile), self.editor_page(profile) as (page, requests):
+                page.evaluate("cm.setValue('# Sharing outcome test')")
+                with page.expect_popup() as event:
+                    page.locator("#share-open").click()
+                popup = event.value
+                popup.wait_for_load_state()
+                page.locator("#btn-close").click()
+                popup.evaluate("""sendResult({ok: false, error: 'grant_required', outcome: 'not_sent',
+                  message: 'Confirm consent in the nbow.io window. Nothing was sent.'})""")
+                expect(page.locator("#share-result")).to_be_visible()
+                expect(page.locator("#share-result-title")).to_have_text("Not shared with nbow.io")
+                expect(page.locator("#share-result-message")).to_contain_text("Confirm consent")
+                self.assertEqual(popup.evaluate("receivedDocuments"), [])
+                page.locator("#share-result-close").click()
+                popup.close()
+
+                for handoff in (False, True):
+                    page.locator("#fab").click()
+                    with page.expect_popup() as event:
+                        page.locator("#share-open").click()
+                    popup = event.value
+                    popup.wait_for_load_state()
+                    if handoff:
+                        popup.evaluate("sendReady()")
+                        popup.wait_for_function("receivedDocuments.length === 1")
+                    page.locator("#btn-close").click()
+                    popup.close()
+                    expect(page.locator("#share-result")).to_be_visible()
+                    title = "Sharing could not be confirmed" if handoff else "Not shared with nbow.io"
+                    expect(page.locator("#share-result-title")).to_have_text(title)
+                    page.locator("#share-result-close").click()
+                    self.assertEqual(requests, [])
 
     def test_blocked_popup_never_sends_and_the_next_save_asks_again(self):
         for profile in PROFILES:
