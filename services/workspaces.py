@@ -1,15 +1,20 @@
 """Temporary, isolated document directories for the public hosted editor."""
+import hashlib
+import hmac
+import ipaddress
+import math
 import os
 import re
 import secrets
 import shutil
 import tempfile
 import time
+from collections import deque
 from datetime import timedelta
 from pathlib import Path
 from threading import RLock
 
-from flask import current_app, g, has_request_context, jsonify, session
+from flask import current_app, g, has_request_context, jsonify, request, session
 
 
 WORKSPACE_TTL = 24 * 60 * 60
@@ -17,13 +22,89 @@ CLEANUP_INTERVAL = 5 * 60
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_DOCUMENTS = 20
 MAX_WORKSPACE_BYTES = 10 * 1024 * 1024
+# Workspaces are free to create, so the per-workspace limits alone do not bound
+# what one visitor can store: each network may grow stored Markdown this much
+# per rolling hour, across all of its workspaces.
+HOURLY_NETWORK_BYTES = 100 * 1024 * 1024
+GROWTH_WINDOW = 60 * 60
 _TOKEN = re.compile(r"[0-9a-f]{64}\Z")
 _RESERVED = re.compile(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", re.I)
 _MARKER = ".last-used"
 
 
+class SaveBudgetExceeded(ValueError):
+    """A save would take the visitor's network over its hourly growth allowance."""
+
+    def __init__(self, message, retry_after):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def _enabled(value):
     return value is True or str(value).lower() in {"1", "true", "yes", "on"}
+
+
+def client_network(address):
+    """The /24 (IPv4) or /48 (IPv6) around an address, the truncation nbow.io
+    already uses for its sharing limit. Unreadable addresses share one bucket."""
+    try:
+        ip = ipaddress.ip_address((address or "").strip())
+    except ValueError:
+        return "unknown"
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return str(ipaddress.ip_network(f"{ip}/{24 if ip.version == 4 else 48}", strict=False))
+
+
+def _size(value):
+    for unit, factor in (("MB", 1024 * 1024), ("KB", 1024)):
+        if value >= factor:
+            return f"{value / factor:g} {unit}"
+    return f"{value} bytes"
+
+
+def _network_key(state):
+    # Nginx overwrites X-Real-IP and the website proxy passes it on; both
+    # upstream listeners are loopback-only, so a visitor cannot choose it.
+    # Networks are only held as keyed hashes, in memory, for one hour.
+    network = client_network(request.headers.get("X-Real-IP") or request.remote_addr)
+    return hmac.new(state["growth_key"], network.encode(), hashlib.sha256).hexdigest()
+
+
+def _recent_growth(events, now):
+    while events and now - events[0][0] >= GROWTH_WINDOW:
+        events.popleft()
+    return sum(amount for _, amount in events)
+
+
+def _check_growth(growth):
+    state = current_app.extensions["md2pdf_workspaces"]
+    limit, now = state["hourly_bytes"], time.time()
+    with state["lock"]:
+        events = state["growth"].get(_network_key(state), deque())
+        excess = _recent_growth(events, now) + growth - limit
+        if excess <= 0:
+            return
+        # Wait until enough of the oldest growth has left the window.
+        wait, freed = GROWTH_WINDOW, 0
+        for moment, amount in events:
+            freed += amount
+            if freed >= excess:
+                wait = moment + GROWTH_WINDOW - now
+                break
+    minutes = max(1, math.ceil(wait / 60))
+    raise SaveBudgetExceeded(
+        f"This save would exceed your connection's limit of {_size(limit)} of new Markdown "
+        f"per hour. Try again in {minutes} minute{'s' if minutes != 1 else ''}.", max(1, math.ceil(wait)))
+
+
+def record_growth(growth):
+    """Charge a completed hosted save to its network, after the file is replaced."""
+    if not growth or not hosted_mode():
+        return
+    state = current_app.extensions["md2pdf_workspaces"]
+    with state["lock"]:
+        state["growth"].setdefault(_network_key(state), deque()).append((time.time(), growth))
 
 
 def hosted_mode():
@@ -98,6 +179,10 @@ def configure_hosted(app):
                                 os.environ.get("MD2PDF_MAX_WORKSPACES", "1000")))
     if maximum < 1:
         raise ValueError("MD2PDF_MAX_WORKSPACES must be a positive integer.")
+    hourly = int(app.config.get("MD2PDF_HOURLY_BYTES",
+                               os.environ.get("MD2PDF_HOURLY_BYTES", HOURLY_NETWORK_BYTES)))
+    if hourly < 1:
+        raise ValueError("MD2PDF_HOURLY_BYTES must be a positive integer.")
     root.mkdir(parents=True, exist_ok=True)
     app.config.update(
         SECRET_KEY=secret,
@@ -109,7 +194,10 @@ def configure_hosted(app):
         PERMANENT_SESSION_LIFETIME=timedelta(seconds=WORKSPACE_TTL),
         SESSION_REFRESH_EACH_REQUEST=True,
     )
-    state = {"root": root, "lock": RLock(), "active": {}, "last_cleanup": 0.0}
+    # The growth key is random per process and never stored: a restart forgets
+    # every counter, which only ever errs in the visitor's favour.
+    state = {"root": root, "lock": RLock(), "active": {}, "last_cleanup": 0.0,
+             "hourly_bytes": hourly, "growth": {}, "growth_key": secrets.token_bytes(32)}
     app.extensions["md2pdf_workspaces"] = state
 
     @app.before_request
@@ -147,6 +235,9 @@ def configure_hosted(app):
             g.md2pdf_workspace_token = token
             if now - state["last_cleanup"] >= CLEANUP_INTERVAL:
                 _cleanup(root, now, state["active"])
+                for key in [key for key, events in state["growth"].items()
+                            if not _recent_growth(events, now)]:
+                    del state["growth"][key]
                 state["last_cleanup"] = now
 
     @app.teardown_request
@@ -178,9 +269,14 @@ def output_directory(requested, default):
 
 
 def validate_save(path, content):
-    """Call under the document lock before replacing a hosted Markdown file."""
+    """Call under the document lock before replacing a hosted Markdown file.
+
+    Returns how many bytes the save adds to what is stored; hand it to
+    record_growth() once the file is replaced. Rewriting a document at the same
+    size (every autosave) is free, so only storing more counts per hour.
+    """
     if not hosted_mode():
-        return
+        return 0
     path = Path(path)
     base = g.md2pdf_input.resolve()
     if (not valid_filename(path.name, ".md") or _linked(path)
@@ -197,6 +293,10 @@ def validate_save(path, content):
     total = sum(p.stat().st_size for p in documents if p.resolve() != path.resolve()) + size
     if total > MAX_WORKSPACE_BYTES:
         raise ValueError("A browser workspace can contain at most 10 MB of Markdown.")
+    growth = max(0, size - (path.stat().st_size if path.exists() else 0))
+    if growth:
+        _check_growth(growth)
+    return growth
 
 
 if __name__ == "__main__":

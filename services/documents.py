@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from threading import RLock
 
-from services.workspaces import hosted_mode, input_directory, valid_filename, validate_save
+from services.workspaces import hosted_mode, input_directory, record_growth, valid_filename, validate_save
 
 DOCUMENT_LOCK = RLock()
 DEFAULT_INPUT = Path(__file__).resolve().parent.parent / "data" / "input"
@@ -82,7 +82,7 @@ def apply_line_edits(content, edits):
 
 def atomic_write(path, content):
     """Caller holds DOCUMENT_LOCK. Replace only after the complete write succeeds."""
-    validate_save(path, content)
+    growth = validate_save(path, content)
     fd, temporary = tempfile.mkstemp(prefix=".md2pdf-", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
@@ -90,6 +90,8 @@ def atomic_write(path, content):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        # A save that fails to store must not spend the hourly allowance.
+        record_growth(growth)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

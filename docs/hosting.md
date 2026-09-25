@@ -106,6 +106,17 @@ are removed during requests and by the hourly timer (so physical removal can
 take up to one further hour). Download documents to keep them. The service does
 not import the repository's `data/input` files into visitor workspaces.
 
+Each workspace holds at most 20 documents, 1 MB each and 10 MB in total. Because
+a visitor can start a fresh workspace by discarding the cookie, stored Markdown
+is also limited per network: saves, imports and assistant edits from one IPv4
+/24 or IPv6 /48 may add at most 100 MB (`MD2PDF_HOURLY_BYTES`) in any rolling
+hour, across all of its workspaces. Only growth counts, so rewriting a document
+at the same size (every autosave) is always allowed. Over the limit, the save is
+refused with HTTP 429, a `Retry-After` header and a message saying when to retry;
+the file on disk is left unchanged. The counters exist only in the service's
+memory, keyed by an HMAC under a random per-process key, and are dropped after
+an hour or on restart. No address is written to disk.
+
 The editor's assets and the hosted Mermaid renderer are bundled. Hosted Markdown
 is sanitized before rendering, and the renderer cannot fetch document URLs or
 local files. Remote images and embedded active HTML are therefore omitted in

@@ -6,6 +6,7 @@ import time
 from flask import Blueprint, jsonify, request
 from openai import OpenAI, DefaultHttpxClient, APIConnectionError, APIStatusError, APITimeoutError
 from services.documents import document_snapshot, apply_line_edits, save_edits, DocumentConflict
+from services.workspaces import SaveBudgetExceeded
 
 llm = Blueprint("llm", __name__, url_prefix="/api/llm")
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -185,6 +186,8 @@ def apply():
         return jsonify(content=content, saved=True, disk_revision=hashlib.sha256(content.encode("utf-8")).hexdigest())
     except DocumentConflict as exc:
         return jsonify(error=str(exc)), 409
+    except SaveBudgetExceeded as exc:
+        return jsonify(error=str(exc)), 429, {"Retry-After": str(exc.retry_after)}
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except OSError:

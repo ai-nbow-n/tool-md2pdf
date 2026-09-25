@@ -11,8 +11,8 @@ from flask import Flask, g, jsonify, request
 
 from services.documents import DOCUMENT_LOCK, atomic_write, document_path
 from services.workspaces import (
-    WORKSPACE_TTL, configure_hosted, input_directory, output_directory,
-    hosted_mode, valid_filename, validate_save,
+    GROWTH_WINDOW, HOURLY_NETWORK_BYTES, WORKSPACE_TTL, SaveBudgetExceeded, client_network,
+    configure_hosted, input_directory, output_directory, hosted_mode, valid_filename, validate_save,
 )
 
 
@@ -31,6 +31,10 @@ class HostedWorkspaceTests(unittest.TestCase):
         @self.app.errorhandler(ValueError)
         def invalid(error):
             return jsonify(error=str(error)), 400
+
+        @self.app.errorhandler(SaveBudgetExceeded)
+        def over_budget(error):
+            return jsonify(error=str(error)), 429, {"Retry-After": str(error.retry_after)}
 
         @self.app.get("/documents")
         def documents():
@@ -66,6 +70,12 @@ class HostedWorkspaceTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         return self.root / "workspaces" / result.json["workspace"]
 
+    def save(self, name, content, address="203.0.113.7", client=None):
+        return (client or self.client).post(f"/document/{name}", json={"content": content},
+                                            headers={"X-Real-IP": address})
+
+    def allowance(self, limit):
+        self.app.extensions["md2pdf_workspaces"]["hourly_bytes"] = limit
     def test_two_browsers_have_separate_inputs_outputs_and_chat_documents(self):
         other = self.app.test_client()
         first = self.workspace()
@@ -155,6 +165,66 @@ class HostedWorkspaceTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(self.client.post("/document/document.md", json={"content": "Short"}).status_code, 200)
 
+    def test_hourly_allowance_counts_growth_not_rewrites(self):
+        self.allowance(10)
+        self.assertEqual(self.save("document.md", "12345").status_code, 200)
+        for _ in range(5):
+            self.assertEqual(self.save("document.md", "54321").status_code, 200)
+        self.assertEqual(self.save("document.md", "").status_code, 200)
+        self.assertEqual(self.save("document.md", "12345").status_code, 200)
+        response = self.save("second.md", "x")
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("limit of 10 bytes of new Markdown per hour", response.json["error"])
+        self.assertFalse((self.workspace() / "input" / "second.md").exists())
+        self.assertEqual(self.save("document.md", "abcde").status_code, 200)
+
+    def test_hourly_allowance_is_shared_by_a_network_across_browsers(self):
+        self.allowance(10)
+        self.assertEqual(self.save("document.md", "1234567890").status_code, 200)
+        fresh = self.app.test_client()
+        self.assertEqual(self.save("document.md", "x", "203.0.113.200", fresh).status_code, 429)
+        self.assertEqual(self.save("document.md", "x", "::ffff:203.0.113.9", fresh).status_code, 429)
+        self.assertEqual(self.save("document.md", "x", "198.51.100.7", fresh).status_code, 200)
+
+    def test_hourly_allowance_frees_as_growth_leaves_the_window(self):
+        self.allowance(10)
+        start = time.time()
+
+        def at(moment):
+            clock = patch("services.workspaces.time")
+            clock.start().time.return_value = moment
+            self.addCleanup(clock.stop)
+            return clock
+
+        at(start)
+        self.assertEqual(self.save("document.md", "123456").status_code, 200)
+        at(start + 600)
+        self.assertEqual(self.save("second.md", "1234").status_code, 200)
+        response = self.save("third.md", "1")
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers["Retry-After"], "3000")
+        self.assertIn("Try again in 50 minutes.", response.json["error"])
+        at(start + GROWTH_WINDOW)
+        self.assertEqual(self.save("third.md", "123456").status_code, 200)
+        self.assertEqual(self.save("fourth.md", "1").status_code, 429)
+
+    def test_failed_write_does_not_spend_the_allowance(self):
+        self.allowance(10)
+        with patch("services.documents.os.replace", side_effect=OSError("Disk full")):
+            with self.assertRaises(OSError):
+                self.save("document.md", "1234567890")
+        self.assertEqual(self.save("document.md", "1234567890").status_code, 200)
+
+    def test_idle_network_counters_are_forgotten_and_never_hold_addresses(self):
+        self.save("document.md", "12345")
+        state = self.app.extensions["md2pdf_workspaces"]
+        (key, events), = state["growth"].items()
+        self.assertNotIn("203.0.113", key)
+        events[0] = (events[0][0] - GROWTH_WINDOW, events[0][1])
+        state["last_cleanup"] = 0
+        self.workspace()
+        self.assertEqual(state["growth"], {})
+
     def test_cleanup_does_not_follow_links(self):
         workspace = self.workspace()
         outside = self.root / "outside"
@@ -207,6 +277,30 @@ class WorkspaceConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "MD2PDF_SECRET_KEY"):
                 configure_hosted(app)
+
+    def test_hourly_allowance_is_configurable_and_positive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for value, expected in ((None, HOURLY_NETWORK_BYTES), ("2048", 2048), ("0", None)):
+                app = Flask(__name__)
+                app.config.update(MD2PDF_HOSTED=True, MD2PDF_SECRET_KEY="test-workspace-signing-key",
+                                  MD2PDF_WORKSPACE_ROOT=temporary)
+                if value is not None:
+                    app.config["MD2PDF_HOURLY_BYTES"] = value
+                with patch.dict(os.environ, {}, clear=True):
+                    if expected is None:
+                        with self.assertRaisesRegex(ValueError, "MD2PDF_HOURLY_BYTES"):
+                            configure_hosted(app)
+                    else:
+                        configure_hosted(app)
+                        self.assertEqual(app.extensions["md2pdf_workspaces"]["hourly_bytes"], expected)
+
+    def test_client_network_uses_the_sharing_limit_truncation(self):
+        self.assertEqual(client_network(" 203.0.113.9 "), "203.0.113.0/24")
+        self.assertEqual(client_network("::ffff:203.0.113.9"), "203.0.113.0/24")
+        self.assertEqual(client_network("2001:db8:abcd:12::1"), "2001:db8:abcd::/48")
+        self.assertEqual(client_network("2001:db8::1"), "2001:db8::/48")
+        for value in (None, "", "unknown", "203.0.113.9, 10.0.0.1", "999.1.1.1"):
+            self.assertEqual(client_network(value), "unknown")
 
     def test_local_directories_and_writes_keep_existing_behavior(self):
         self.assertFalse(hosted_mode())

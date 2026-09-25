@@ -17,7 +17,8 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, request, send_file
 from services.llm import llm, CHAT_MODELS, CHAT_TIMEOUT_SECONDS, CONNECTION_TIMEOUT_SECONDS
 from services.documents import DOCUMENT_LOCK, atomic_write
-from services.workspaces import configure_hosted, hosted_mode, input_directory, output_directory, valid_filename
+from services.workspaces import (SaveBudgetExceeded, configure_hosted, hosted_mode, input_directory,
+                                 output_directory, valid_filename)
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 BASE    = Path(__file__).parent
@@ -52,6 +53,11 @@ COMPILING = set()
 @app.errorhandler(ValueError)
 def invalid_request(error):
     return jsonify(error=str(error)), 400
+
+
+@app.errorhandler(SaveBudgetExceeded)
+def save_budget_exceeded(error):
+    return jsonify(error=str(error)), 429, {"Retry-After": str(error.retry_after)}
 
 
 @app.errorhandler(413)

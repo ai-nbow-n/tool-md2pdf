@@ -17,7 +17,7 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 
 import app as editor
 from services.llm import llm
-from services.workspaces import configure_hosted
+from services.workspaces import SaveBudgetExceeded, configure_hosted
 
 
 PREFIX = "/en/products/aiconsulting/code-agents/md2pdf"
@@ -33,6 +33,7 @@ def hosted_app(root):
     configure_hosted(application)
     application.register_blueprint(llm)
     application.register_error_handler(ValueError, editor.invalid_request)
+    application.register_error_handler(SaveBudgetExceeded, editor.save_budget_exceeded)
     application.register_error_handler(413, editor.request_too_large)
     application.before_request(editor.check_hosted_request)
     application.after_request(editor.hosted_headers)
@@ -124,6 +125,33 @@ class HostedAppTests(unittest.TestCase):
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(self.client.post("/api/file/document.md", json=[]).status_code, 400)
+
+    def test_hourly_growth_allowance_limits_saves_imports_and_chat_edits(self):
+        self.app.extensions["md2pdf_workspaces"]["hourly_bytes"] = 20
+        first = self.client.post("/api/file/document.md", json={"content": "a" * 20})
+        self.assertEqual(first.status_code, 200)
+        # Autosave rewrites the whole document; the same size stays free.
+        saved = self.client.post("/api/file/document.md", json={
+            "content": "b" * 20, "disk_revision": first.json["disk_revision"]})
+        self.assertEqual(saved.status_code, 200)
+        revision = saved.json["disk_revision"]
+        # A new cookie is a new workspace, not a new allowance.
+        other = self.app.test_client()
+        for client, route, body in (
+                (self.client, "/api/file/document.md", {"content": "b" * 21, "disk_revision": revision}),
+                (other, "/api/file/imported.md", {"content": "c", "create_only": True})):
+            response = client.post(route, json=body)
+            self.assertEqual(response.status_code, 429)
+            self.assertTrue(3590 <= int(response.headers["Retry-After"]) <= 3600)
+            self.assertIn("limit of 20 bytes of new Markdown per hour", response.json["error"])
+        document = {"filename": "document.md", "input_dir": None, "content": "b" * 20, "disk_revision": revision}
+        response = self.client.post("/api/llm/apply", json={
+            "document": document, "disk_revision": revision,
+            "edits": [{"start_line": 2, "end_line": 1, "replacement": ["more"]}]})
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Retry-After", response.headers)
+        self.assertEqual(self.client.get("/api/file/document.md").text, "b" * 20)
+        self.assertEqual(other.get("/api/files").json, ["document.md"])
 
     def test_oversized_json_is_rejected_before_document_write(self):
         response = self.client.post("/api/file/document.md", json={"content": "a" * (2 * 1024 * 1024)})
