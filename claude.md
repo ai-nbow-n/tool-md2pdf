@@ -26,7 +26,7 @@ tool-md2pdf/
 ├── docs/
 │   ├── chat.md                 # the editing assistant
 │   ├── hosting.md              # nbow.io deployment and visitor storage
-│   ├── live-chat-results.md    # the live timeout/model investigation
+│   ├── live-chat-results.md    # live model, timeout and prompt measurements
 │   └── share.md                # the optional nbow.io corpus donation
 ├── services/
 │   ├── md2pdf.py               # CLI conversion tool (Playwright + markdown)
@@ -35,8 +35,10 @@ tool-md2pdf/
 │   └── workspaces.py           # hosted sessions, per-browser workspaces, cleanup
 ├── static/
 │   ├── chat.js                 # chat UI
+│   ├── corpus-info.{js,css}    # corpus explainer beside the share button (sends nothing)
 │   ├── files.js                # browser import and Markdown/PDF downloads
 │   ├── i18n.js                 # interface translations (en/de/es)
+│   ├── nbow.ico                # footer icon, a copy of nbow.io's favicon
 │   ├── share.js                # the nbow.io sharing popup handshake
 │   └── vendor/                 # CodeMirror 5.65.16, Mermaid 12.0.0 (+ licenses)
 ├── deploy/
@@ -120,7 +122,11 @@ temporary browser workspaces. Every document path, including chat edits, must
 go through `services/workspaces.py`; never trust server directories from clients.
 The hosted renderer sanitizes HTML, uses bundled Mermaid, and blocks networking.
 Desktop use remains the default. Frontend URLs must use `window.md2pdfUrl()` so
-localized paths work. Browser assets are vendored in `static/vendor/`.
+localized paths work (in the inline template, `__APP_BASE__/static/...`).
+Browser assets are vendored in `static/vendor/`. The editor page itself loads
+nothing from another origin, so a visitor's browser contacts only nbow.io: the
+footer uses `static/nbow.ico` and an inline SVG GitHub mark (a `github.com`
+favicon was removed for this reason). Keep new icons and fonts local too.
 
 ---
 
@@ -182,12 +188,25 @@ measurements behind every budget in
   and converts the result to 1-based line edits that `apply_line_edits()`
   replays and checks. One corrective round trip is allowed inside the same time
   budget. Nothing is written until a whole batch validates. Line numbers were
-  tried first and a 3B model got them wrong (see the results doc).
+  tried first and a 3B model got them wrong (see the results doc). An empty
+  `find` appends to the end; a replacement carrying the `<document>` tags is
+  refused.
+- **An empty document is written, not edited.** It gets `WRITE_INSTRUCTIONS`
+  and `WRITE_SCHEMA` (`markdown` first, then `reply`, 1,024 output tokens) and
+  no `<document>` block. With the edit format the 1.7B model answered in chat
+  or wrote the wrapper into the file.
+- **Measure every prompt or schema change on the real model.** Rewording the
+  edit prompt, or adding an `append` field, made `qwen3:1.7b` edit documents in
+  answer to plain questions; the schema's property order also changes what it
+  writes. A local `ollama serve` with `qwen3:1.7b` pulled runs the same build:
+  run `scripts/live_chat_smoke.py` plus empty-document requests and questions,
+  and record the results in the results doc.
 - **Saves are optimistic and atomic.** Every read returns a SHA-256
   `disk_revision`; saves and chat edits pass it back and get HTTP 409 if the file
   changed underneath. Writes go through `atomic_write()` under `DOCUMENT_LOCK`.
 - **The document is data.** `INSTRUCTIONS` says so explicitly, the document sits
-  inside `<document>` tags, and the app — not the model — performs every write.
+  inside `<document>` tags (an empty one is not sent at all), and the app — not
+  the model — performs every write.
   Keep it that way when editing the prompt.
 - **The server has 2 vCPUs.** One generation at a time (`_SLOT`, others get 429);
   180 s per generation, 10 s for status checks; documents up to 4,000 characters
@@ -246,8 +265,9 @@ and `tests/` is deliberately not a package.
 | `test_hosted_renderer.py` | Untrusted Markdown through the same Chromium path; no network |
 | `test_hosted_app.py` | Hosted routes, session isolation, guards, size limits |
 | `test_workspaces.py` | Workspace lifecycle, cleanup, path refusals, save validation |
-| `test_llm.py` | Find/replace conversion, line edits, revision conflicts, caps, busy slot, network allowance, timeouts, correction path |
+| `test_llm.py` | Find/replace conversion, appending, `<document>` tag refusal, empty-document write prompt, line edits, revision conflicts, caps, busy slot, network allowance, timeouts, correction path |
 | `test_chat_ui.py` | Browser chat flow against a fake Ollama |
+| `test_share_ui.py` | Share button flows on desktop and phone profiles against a fake nbow.io popup; never reaches a live corpus |
 | `test_deploy.py` | Nginx edit targets only the website HTTPS block and is repeatable |
 
 `scripts/live_chat_smoke.py` is the only test that runs the real model: it is

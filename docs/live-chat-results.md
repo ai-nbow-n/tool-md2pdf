@@ -47,3 +47,33 @@ Times are single observations, not guarantees. A small model still slips (the
 dropped `#`); editor Undo reverses a chat edit. Larger models (7B and up) would
 be more accurate but at least twice as slow on this hardware, which does not fit
 the 180 s budget.
+
+## Empty documents (26 September 2026)
+
+On nbow.io, "Provide anatomy of human neuron" on an empty document came back as
+an answer in the chat, and the file received only the prompt's own
+`<document name="untitled-2.md">` wrapper. Reproduced on a workstation CPU with
+the same `qwen3:1.7b` build (Q4_K_M, about 10.7 output tokens/s; the VPS will be
+somewhat slower), through `/api/llm/chat`:
+
+| Empty document, request | Edit prompt (before) | Own write prompt (now) |
+|---|---|---|
+| Provide anatomy of human neuron | chat answer pasted as one flat paragraph | title, three sections, lists; 439 tokens, 46 s |
+| Write a short poem about the sea | one run-on line | titled poem; 207 tokens, 21 s |
+| What is photosynthesis? | flat paragraph | titled explainer with sections; 230 tokens, 23 s |
+| Explain the causes of the French Revolution | HTTP 502: quoted its own answer as `find` | three sections of lists; 293 tokens, 29 s |
+| Schreibe einen kurzen Text über Bienen. | — | German document and German reply |
+| hello | — | wrote a placeholder document, although told not to |
+
+Tried first and dropped: rewording the one edit prompt so that requests for
+text go into the document, with an empty `find` or a separate `append` field
+for new text. The model then copied its edits into `reply`, edited documents in
+answer to plain questions ("How many stanzas?" deleted the title), and looped
+on tab characters. Only the separate empty-document prompt improved writing
+without making questions worse.
+
+Documents with content keep the edit prompt, plus one line on the empty `find`.
+`scripts/live_chat_smoke.py` gave the same results as in the table above (title
+changed without its `#`, Salzburg removed correctly, question answered without
+an edit). Still wrong with either prompt: "Add a Friday evening: dinner at
+Figlmueller." inserted the line twice.

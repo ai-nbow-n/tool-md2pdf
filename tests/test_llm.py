@@ -15,7 +15,8 @@ from app import app
 import services.llm as llm_module
 from services.documents import apply_line_edits
 from services.llm import (AssistantUnavailable, CHAT_MODEL, CHAT_TIMEOUT_SECONDS, EDIT_SCHEMA,
-                          MAX_CONVERSATION_CHARS, MAX_DOCUMENT_CHARS, TRUNCATED, to_line_edits)
+                          MAX_CONVERSATION_CHARS, MAX_DOCUMENT_CHARS, TRUNCATED, WRITE_INSTRUCTIONS,
+                          WRITE_SCHEMA, to_line_edits)
 
 
 def answer(reply="Updated the city name.", edits=None):
@@ -93,6 +94,35 @@ class ChatBackendTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/llm/apply", json={
             "document": self.document(), "disk_revision": response.json["disk_revision"],
             "edits": []}).status_code, 400)
+
+    def test_empty_document_is_written_from_its_own_prompt(self):
+        # Nothing to quote or ask about: the model writes the whole document,
+        # and never sees a <document> wrapper it could copy into the file.
+        self.path.write_text("\n", encoding="utf-8")
+        self.ollama.return_value = {"message": {"content": json.dumps({
+            "markdown": "# Neuron\n\n## Parts\n\n- Soma\n- Axon", "reply": "I wrote an overview."})}}
+        response = self.client.post("/api/llm/chat", json=self.body("Provide anatomy of a neuron"))
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["reply"], "I wrote an overview.")
+        payload = self.sent()
+        self.assertEqual(payload["format"], WRITE_SCHEMA)
+        self.assertEqual(payload["messages"][0]["content"], WRITE_INSTRUCTIONS)
+        self.assertNotIn("<document", payload["messages"][0]["content"])
+        self.assertGreater(payload["options"]["num_predict"], llm_module.OPTIONS["num_predict"])
+        saved = self.client.post("/api/llm/apply", json={
+            "document": self.document(), "edits": response.json["edits"],
+            "disk_revision": response.json["disk_revision"]})
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "# Neuron\n\n## Parts\n\n- Soma\n- Axon\n")
+
+    def test_empty_document_without_a_request_for_text_only_replies(self):
+        self.path.write_text("", encoding="utf-8")
+        self.ollama.return_value = {"message": {"content": json.dumps({
+            "markdown": "", "reply": "Tell me what to write."})}}
+        response = self.client.post("/api/llm/chat", json=self.body("hello"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["edits"], [])
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "")
 
     def test_conflicts_before_chat_and_before_apply(self):
         body = self.body()
@@ -284,7 +314,9 @@ class FindReplaceTests(unittest.TestCase):
             ([{"find": "Vienna", "replace": "x"}], "not in the document"),
             ([{"find": "Walk.", "replace": "Run."}], "more than once"),
             ([{"find": "## Day 2: Salzburg", "replace": "x"}, {"find": "Salzburg\n\nWalk.", "replace": "y"}], "same passage"),
-            ([{"find": "", "replace": "x"}], "empty"),
+            ([{"find": "", "replace": "  \n"}], "needs text"),
+            ([{"find": "", "replace": "A"}, {"find": "", "replace": "B"}], "one edit"),
+            ([{"find": "Six days.", "replace": '<document name="trip.md">'}], "<document> tags"),
             ([{"find": "Six", "replace": 5}], "\"find\" and \"replace\""),
             ([{"text": "Six"}], "\"find\" and \"replace\""),
             ("not a list", "at most"),
@@ -295,8 +327,24 @@ class FindReplaceTests(unittest.TestCase):
     def test_empty_document_can_be_written_once(self):
         line_edits = to_line_edits("", [{"find": "", "replace": "# New\n\nText.\n"}])
         self.assertEqual(apply_line_edits("", line_edits), "# New\n\nText.\n")
-        with self.assertRaisesRegex(ValueError, "one edit only"):
+        with self.assertRaisesRegex(ValueError, "one edit"):
             to_line_edits("", [{"find": "", "replace": "B"}, {"find": "", "replace": "A"}])
+        with self.assertRaisesRegex(ValueError, "<document> tags"):
+            to_line_edits("", [{"find": "", "replace": '<document name="a.md">\n\n</document>'}])
+
+    def test_empty_find_appends_after_one_blank_line(self):
+        self.check([{"find": "", "replace": "\n\n## Notes\n\nBook early."}],
+                   self.DOC + "\n## Notes\n\nBook early.\n")
+        for content, expected in (("Text", "Text\n\nMore.\n"), ("Text\n", "Text\n\nMore.\n"),
+                                  ("Text\n\n\n", "Text\n\n\nMore.\n")):
+            with self.subTest(content=content):
+                line_edits = to_line_edits(content, [{"find": "", "replace": "More."}])
+                self.assertEqual(apply_line_edits(content, line_edits), expected)
+
+    def test_document_tags_already_in_the_document_may_be_edited(self):
+        doc = "Wrap it in <document> and </document>.\n"
+        self.assertEqual(apply_line_edits(doc, to_line_edits(doc, [{"find": "Wrap", "replace": "Put"}])),
+                         "Put it in <document> and </document>.\n")
 
 
 class OllamaTransportTests(unittest.TestCase):

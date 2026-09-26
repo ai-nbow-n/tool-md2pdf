@@ -57,11 +57,21 @@ list of `edits`, each a passage to `find`, copied from the document, and its
    checked by replaying them with `apply_line_edits`.
 
 Quoting text is more reliable for a small model than counting line numbers, and a
-wrong quote is caught instead of deleting the wrong lines. An empty document is
-written with one edit whose `find` is empty.
+wrong quote is caught instead of deleting the wrong lines. In a document with
+content, an empty `find` adds its text at the end, after one blank line. A
+replacement containing the prompt's `<document>` tags is refused unless the
+document already contains them.
+
+An empty document has nothing to quote or ask about, so it gets its own short
+prompt with no `<document>` block: the model returns the whole new document as
+`markdown` (a title, sections, lists) and a one-sentence `reply`, with up to
+1,024 output tokens instead of 512. Given the edit format, the model answered in
+chat or wrote the `<document>` wrapper into the file (see
+[live-chat-results.md](live-chat-results.md)).
 
 When you request an edit, the app saves the validated line changes and updates the
-editor. Ordinary questions return text without saving. Compile to refresh the PDF.
+editor. Ordinary questions return text without saving; on an empty document, a
+request for text is written into it. Compile to refresh the PDF.
 Editor Undo can reverse a chat edit; Save persists the undo. Switching files
 clears the conversation.
 
@@ -77,7 +87,8 @@ relying on it. Editor Undo reverses a chat edit.
 - `POST /api/llm/chat`: accepts `messages` and `document`. `document` contains
   `filename`, optional `input_dir`, current editor `content`, and the loaded
   `disk_revision`. The backend validates the file revision, sends the document to
-  the model inside `<document>` tags, and returns `reply`, `edits` (line edits)
+  the model inside `<document>` tags (an empty document is not sent; the model
+  writes a new one), and returns `reply`, `edits` (line edits)
   and `disk_revision`; this endpoint does not write files. Errors: 400 invalid
   request, 409 revision conflict, 413 document too long, 429 busy or hourly
   allowance spent, 502 unusable answer, 503 model unavailable, 504 time budget.
