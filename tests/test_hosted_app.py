@@ -211,7 +211,6 @@ class HostedAppTests(unittest.TestCase):
                     browser = pw.chromium.launch()
                     try:
                         page = browser.new_page(viewport={"width": 1440, "height": 1100})
-                        page.route("https://nbow.io/favicon.ico", lambda route: route.abort())
                         errors, requests, static_statuses = [], [], []
                         page.on("pageerror", lambda error: errors.append(str(error)))
                         page.on("request", lambda request: requests.append(urlsplit(request.url).path))
@@ -223,6 +222,8 @@ class HostedAppTests(unittest.TestCase):
                         self.assertTrue(page.locator("#s-in").is_hidden())
                         self.assertTrue(page.locator("#s-out").is_hidden())
                         self.assertEqual(page.locator("#share-open").get_attribute("data-client-id"), "md2pdf-web")
+                        # The footer icon comes from this app, not from nbow.io or GitHub.
+                        self.assertEqual(page.evaluate("document.querySelector('.panel-footer img').naturalWidth"), 32)
 
                         imported = "# Imported\n\nM\u00fcnchen\n"
                         page.locator("#file-upload").set_input_files({

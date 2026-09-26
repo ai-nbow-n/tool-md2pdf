@@ -90,7 +90,6 @@ class ShareUiTests(unittest.TestCase):
         context.on("request", lambda request: corpus_requests.append(request.url)
                    if urlsplit(request.url).path.startswith("/api/corpus/") else None)
         context.route("**/api/corpus/**", refuse_corpus)
-        context.route("https://nbow.io/favicon.ico", lambda route: route.abort())
         context.route("https://nbow.io/*/products/aiconsulting/code-agents/share",
                       lambda route: route.fulfill(content_type="text/html", body=RECEIVER))
         context.add_init_script("""(() => {
