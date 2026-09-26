@@ -8,8 +8,12 @@ there is no API key, no model choice, and no third-party provider. Locally, set
 model's licence before configuring it: `qwen2.5:3b` is research-only (see
 [live-chat-results.md](live-chat-results.md)).
 
-Install dependencies with `.venv\Scripts\python -m pip install -r requirements.txt`
-and start `app.py`. The **Assistant** section of the settings panel shows whether
+Install dependencies with `.venv\Scripts\python -m pip install -r requirements.txt`.
+For local use, keep `ollama serve` running in another terminal unless the Ollama
+app or service is already running, then start `.venv\Scripts\python app.py`.
+If a Python syntax error stopped the app, start it again after fixing the source;
+the stopped reloader cannot restart itself.
+The **Assistant** section of the settings panel shows whether
 the model answers and the longest document it reads. Open a Markdown file and
 click the bottom-right chat bubble.
 
@@ -62,7 +66,8 @@ content, an empty `find` adds its text at the end, after one blank line. A
 replacement containing the prompt's `<document>` tags is refused unless the
 document already contains them.
 
-An empty document has nothing to quote or ask about, so it gets its own short
+An empty document (including whitespace or a leading UTF-8 BOM alone) has
+nothing to quote or ask about, so it gets its own short
 prompt with no `<document>` block: the model returns the whole new document as
 `markdown` (a title, sections, lists) and a one-sentence `reply`, with up to
 1,024 output tokens instead of 512. Given the edit format, the model answered in
@@ -109,7 +114,7 @@ edits if local content changed during inference.
 Neither model output nor document content can select other files or execute
 commands, and the document is marked as data in the instructions.
 
-Run tests with `.venv\Scripts\python -B -m pytest tests -q`. Chat tests use a fake
+Run tests with `.venv\Scripts\python -B -m unittest discover -s tests`. Chat tests use a fake
 Ollama (`services.llm._ollama` patched) and temporary Markdown files.
 `scripts/live_chat_smoke.py` runs three requests against a real Ollama (free; it
 uses temporary copies) and prints timing, replies and the lines each edit changed.

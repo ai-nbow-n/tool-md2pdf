@@ -191,7 +191,9 @@ measurements behind every budget in
   tried first and a 3B model got them wrong (see the results doc). An empty
   `find` appends to the end; a replacement carrying the `<document>` tags is
   refused.
-- **An empty document is written, not edited.** It gets `WRITE_INSTRUCTIONS`
+- **An empty document is written, not edited.** Whitespace and a leading UTF-8
+  BOM alone count as empty; `_empty_document()` is shared by prompt selection
+  and passage replacement. It gets `WRITE_INSTRUCTIONS`
   and `WRITE_SCHEMA` (`markdown` first, then `reply`, 1,024 output tokens) and
   no `<document>` block. With the edit format the 1.7B model answered in chat
   or wrote the wrapper into the file.

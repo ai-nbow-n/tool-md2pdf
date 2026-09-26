@@ -1,4 +1,5 @@
 """Browser integration against a local Flask server and a fake Ollama."""
+import hashlib
 import json
 import tempfile
 import threading
@@ -36,6 +37,81 @@ class FakeOllama:
 
 
 class ChatBrowserTests(unittest.TestCase):
+    def test_new_and_whitespace_documents_are_written_then_edited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = FakeOllama()
+            llm_module._STATUS["checked"] = 0.0
+            with patch("app.DEF_IN", root), patch("services.documents.DEFAULT_INPUT", root), \
+                    patch("services.llm._ollama", side_effect=fake):
+                server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=QuietHandler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with sync_playwright() as pw:
+                        browser = pw.chromium.launch()
+                        page = browser.new_page(viewport={"width": 1280, "height": 900})
+                        errors = []
+                        page.on("pageerror", lambda error: errors.append(str(error)))
+                        page.goto(f"http://127.0.0.1:{server.server_port}", wait_until="networkidle")
+                        page.wait_for_function("document.getElementById('api-status').dataset.state === 'ok'")
+                        self.assertTrue(page.locator("#chat-input").is_disabled())
+                        page.locator("#chat-bubble").click()
+
+                        for filename, initial_content in (("new.md", ""), ("whitespace.md", " \n\t\n")):
+                            with self.subTest(filename=filename):
+                                # Exercise the New button, including creating the file before chat.
+                                page.once("dialog", lambda dialog, name=filename: dialog.accept(name))
+                                page.locator("#btn-new").click()
+                                page.wait_for_function(
+                                    "name => window.markdownChat?.snapshot()?.filename === name",
+                                    arg=filename)
+                                self.assertTrue(page.locator("#chat-input").is_enabled())
+                                self.assertEqual(page.locator(".chat-message").count(), 0)
+                                source = root / filename
+                                self.assertEqual(source.read_text(encoding="utf-8"), "")
+                                if initial_content:
+                                    # The current editor, including unsaved blank text, decides writing mode.
+                                    page.evaluate("text => cm.setValue(text)", initial_content)
+                                    self.assertTrue(page.evaluate("dirty"))
+                                original_revision = page.evaluate("window.markdownChat.snapshot().disk_revision")
+                                markdown = "# Neuron\n\n## Parts\n\n- Soma\n- Axon"
+                                fake.reply = {"markdown": markdown, "reply": "I wrote a neuron overview."}
+                                with page.expect_request("**/api/llm/chat") as request:
+                                    page.locator("#chat-input").fill("Write a brief overview of neuron anatomy.")
+                                    page.locator("#chat-input").press("Enter")
+                                self.assertEqual(request.value.post_data_json["document"]["content"], initial_content)
+                                page.wait_for_function("document.querySelectorAll('.chat-message.assistant').length === 1")
+                                self.assertEqual(source.read_text(encoding="utf-8"), markdown + "\n")
+                                self.assertEqual(page.evaluate("cm.getValue()"), markdown + "\n")
+                                self.assertFalse(page.evaluate("dirty"))
+                                snapshot = page.evaluate("window.markdownChat.snapshot()")
+                                self.assertNotEqual(snapshot["disk_revision"], original_revision)
+                                self.assertEqual(snapshot["disk_revision"], hashlib.sha256(source.read_bytes()).hexdigest())
+                                self.assertEqual(fake.chats[-1]["format"], llm_module.WRITE_SCHEMA)
+                                self.assertNotIn("<document", fake.chats[-1]["messages"][0]["content"])
+
+                                # Writing must transition to ordinary editing with the saved text as context.
+                                fake.reply = {"reply": "Changed the title.", "edits": [
+                                    {"find": "# Neuron", "replace": "# Neuron anatomy"}]}
+                                page.locator("#chat-input").fill("Change the title to Neuron anatomy.")
+                                page.locator("#chat-input").press("Enter")
+                                page.wait_for_function("document.querySelectorAll('.chat-message.assistant').length === 2")
+                                expected = markdown.replace("# Neuron", "# Neuron anatomy", 1) + "\n"
+                                self.assertEqual(source.read_text(encoding="utf-8"), expected)
+                                self.assertEqual(page.evaluate("cm.getValue()"), expected)
+                                self.assertEqual(fake.chats[-1]["format"], llm_module.EDIT_SCHEMA)
+                                messages = fake.chats[-1]["messages"]
+                                self.assertIn(markdown, messages[0]["content"])
+                                self.assertEqual([message["role"] for message in messages],
+                                                 ["system", "user", "assistant", "user"])
+                        self.assertEqual(errors, [])
+                        browser.close()
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=5)
+
     def test_chat_edit_follow_up_and_stale_edit_guard(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

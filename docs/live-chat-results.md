@@ -77,3 +77,18 @@ Documents with content keep the edit prompt, plus one line on the empty `find`.
 changed without its `#`, Salzburg removed correctly, question answered without
 an edit). Still wrong with either prompt: "Add a Friday evening: dinner at
 Figlmueller." inserted the line twice.
+
+### Local recovery check (26 September 2026)
+
+The reported console ended with an unterminated `EMPTY_DOCUMENT` string during
+a debug reload. That literal is absent from the current source and `app` imports
+successfully. The local Ollama server was also stopped; starting the installed
+Ollama 0.16.3 with `ollama serve` made `qwen3:1.7b` available again.
+
+Retested "Provide anatomy of human neuron" on an empty temporary file through
+the real `/api/llm/chat` and `/api/llm/apply` handlers. Chat returned HTTP 200 in
+50.2 s on the Windows workstation CPU; apply returned HTTP 200 and saved 1,613
+characters with a title, two sections and lists, without document wrapper tags.
+The prompt, schema and token budget were unchanged. Automated browser coverage
+now also exercises New, whitespace-only unsaved content, saving, and a follow-up
+edit; backend coverage includes otherwise blank files with a UTF-8 BOM.

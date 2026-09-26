@@ -124,6 +124,24 @@ class ChatBackendTests(unittest.TestCase):
         self.assertEqual(response.json["edits"], [])
         self.assertEqual(self.path.read_text(encoding="utf-8"), "")
 
+    def test_invisible_empty_content_is_replaced_including_a_utf8_bom(self):
+        markdown = "# Neuron\n\n- Soma\n- Axon\n"
+        self.ollama.return_value = {"message": {"content": json.dumps({
+            "markdown": markdown, "reply": "I wrote an overview."})}}
+        for content in ("", " \n\t\n", "\ufeff", "\ufeff \n\t\n"):
+            with self.subTest(content=repr(content)):
+                self.path.write_text(content, encoding="utf-8")
+                body = self.body("Write a neuron overview.")
+                response = self.client.post("/api/llm/chat", json=body)
+                self.assertEqual(response.status_code, 200, response.json)
+                self.assertEqual(self.sent()["format"], WRITE_SCHEMA)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), content)
+                saved = self.client.post("/api/llm/apply", json={
+                    "document": body["document"], "edits": response.json["edits"],
+                    "disk_revision": response.json["disk_revision"]})
+                self.assertEqual(saved.status_code, 200, saved.json)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), markdown)
+
     def test_conflicts_before_chat_and_before_apply(self):
         body = self.body()
         first = self.client.post("/api/llm/chat", json=body).json

@@ -231,6 +231,11 @@ def _charge(key, seconds):
         _RATE["events"].setdefault(key, deque()).append((time.time(), seconds))
 
 
+def _empty_document(content):
+    """A leading UTF-8 BOM is invisible and does not make a blank file text."""
+    return not content.lstrip("\ufeff").strip()
+
+
 def _span(content, find):
     """(start, end) of the one place `find` occurs, counting overlapping matches."""
     if not isinstance(find, str):
@@ -238,7 +243,7 @@ def _span(content, find):
     if not find.strip():
         # An empty passage is a blank document as a whole, and otherwise its end:
         # appending is what "write more" needs, with nothing to quote.
-        return (0, len(content)) if not content.strip() else (len(content), len(content))
+        return (0, len(content)) if _empty_document(content) else (len(content), len(content))
     preview = find.strip().replace("\n", " ")[:60]
     starts, position = [], content.find(find)
     while position != -1 and len(starts) < 2:
@@ -267,7 +272,7 @@ def to_line_edits(content, edits):
             # A small model echoes the prompt's wrapper into an empty document.
             raise ValueError("Write only the Markdown: the <document> tags are not part of the document.")
         start, end = _span(content, edit["find"])
-        if start == end == len(content) and content.strip():
+        if start == end == len(content) and not _empty_document(content):
             if not replacement.strip():
                 raise ValueError("An edit with an empty \"find\" needs text to add.")
             # Added text starts its own block, after one blank line.
@@ -410,7 +415,7 @@ def _parse(text, content, schema):
 
 
 def _respond(path, content, revision, clean, spent):
-    if content.strip():
+    if not _empty_document(content):
         schema = EDIT_SCHEMA
         system = INSTRUCTIONS + f"\n\n<document name=\"{path.name}\">\n" + content + "\n</document>"
     else:
