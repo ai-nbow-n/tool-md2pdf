@@ -1,93 +1,71 @@
-"""Explicit live API test using a local key file and temporary document copies.
+"""Explicit live test of the editing assistant against a real Ollama.
 
-Runs billable requests. Never logs credentials, raw provider errors, or document text.
+Free: the model runs on the server (or wherever MD2PDF_OLLAMA_URL points), with
+no API key. Uses a temporary copy of a sample itinerary, so nothing real is
+edited. Prints timing, each reply, and the lines each set of edits removed and
+added. HTTP 200 and valid edits do not mean every requested change was made:
+read the removed/added lines.
+
+To test the production model from a workstation, open a tunnel first, e.g.
+    ssh -N -L 11500:127.0.0.1:11434 <server>
+and run with MD2PDF_OLLAMA_URL=http://127.0.0.1:11500.
 """
 import argparse
 import hashlib
-import json
-import re
 import sys
 import tempfile
 import time
-import threading
-from unittest.mock import patch
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
-from app import app
-from services.documents import apply_line_edits
+from app import app  # noqa: E402
+from services.documents import apply_line_edits  # noqa: E402
+
+CITIES = ["Munich", "Salzburg", "Vienna", "Bratislava", "Budapest", "Prague"]
+REQUESTS = [
+    "Change the title to 'Rail trip through Central Europe'.",
+    "Remove Salzburg from the trip: delete its whole day and update the totals to five cities and 600 EUR.",
+    "How many cities does the trip visit, and which is the last one?",
+]
+
+
+def sample():
+    lines = ["# Central Europe rail trip", ""]
+    for day, city in enumerate(CITIES, 1):
+        lines += [f"## Day {day}: {city}", "",
+                  f"Arrive in {city} by train and walk the old town.",
+                  f"Dinner at a local restaurant in {city}.", "",
+                  f"| Hotel | Central hotel in {city} |", "|---|---|", "| Budget | 120 EUR |", ""]
+    lines += ["## Totals", "", "Six days, six cities, about 720 EUR in total.", ""]
+    return "\n".join(lines)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--models", nargs="+", default=["gpt-5", "gpt-5-mini", "gpt-4.1-mini"])
-    parser.add_argument("--key-file", type=Path, default=BASE / "apikey.txt")
-    parser.add_argument("--source", type=Path, default=BASE / "data/input/munich_sofia_2026.md")
-    parser.add_argument("--report", type=Path, default=BASE / "data/output/live-chat-tests.json")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source", type=Path, help="Markdown file to use instead of the built-in sample")
     args = parser.parse_args()
-    key = args.key_file.read_text(encoding="utf-8-sig").strip()
-    if not key or "\n" in key:
-        raise SystemExit("Key file must contain only the API key on one line.")
-    original = args.source.read_bytes()
-    source_text = original.decode("utf-8").replace("\r\n", "\n")
-    diagnostic = threading.local()
-
-    def validate(content, edits):
-        try:
-            return apply_line_edits(content, edits)
-        except ValueError as exc:
-            diagnostic.validation_error = str(exc)
-            artifact = args.report.parent / (args.report.stem + "-" + diagnostic.model + "-rejected.json")
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text(json.dumps(edits, ensure_ascii=False, indent=2), encoding="utf-8")
-            raise
-
-    def run(model):
-        started = time.monotonic()
-        result = {"model": model}
-        diagnostic.model = model
-        diagnostic.validation_error = None
-        try:
-            with tempfile.TemporaryDirectory(prefix="md2pdf-live-") as directory, app.test_client() as client:
-                path = Path(directory) / "trip.md"
-                path.write_bytes(source_text.encode("utf-8"))
-                document = {"filename": path.name, "input_dir": directory, "content": source_text,
-                            "disk_revision": hashlib.sha256(path.read_bytes()).hexdigest()}
-                response = client.post("/api/llm/chat", json={"api_key": key, "model": model,
-                    "document": document, "messages": [{"role": "user", "content":
-                    "remove salzburg from the trip and make the diagram coherent"}]})
-                result.update(status=response.status_code, seconds=round(time.monotonic() - started, 2))
-                data = response.get_json() or {}
-                if response.status_code != 200:
-                    result["error"] = data.get("error", "Request failed")
-                    if diagnostic.validation_error:
-                        result["validation_error"] = diagnostic.validation_error
-                else:
-                    result["edit_count"] = len(data["edits"])
-                    saved = client.post("/api/llm/apply", json={"document": document,
-                        "disk_revision": data["disk_revision"], "edits": data["edits"]})
-                    result["save_status"] = saved.status_code
-                    if saved.status_code == 200:
-                        updated = path.read_text(encoding="utf-8")
-                        result["salzburg_removed"] = not re.search(r"salzburg|salzburgo", updated, re.I)
-                        result["mermaid_blocks"] = updated.count("```mermaid")
-                        # Check the model's returned graph with the actual renderer later.
-                        artifact = args.report.parent / (args.report.stem + "-" + model + ".md")
-                        artifact.parent.mkdir(parents=True, exist_ok=True)
-                        artifact.write_text(updated, encoding="utf-8")
-        except Exception as exc:
-            result.update(error_type=type(exc).__name__, seconds=round(time.monotonic() - started, 2))
-        print(json.dumps(result), flush=True)
-        return result
-
-    with patch("services.llm.apply_line_edits", side_effect=validate), ThreadPoolExecutor(max_workers=3) as pool:
-        results = list(pool.map(run, args.models))
-    if args.source.read_bytes() != original:
-        raise SystemExit("Source file changed during testing; test only wrote to temporary/output files.")
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    document = args.source.read_text(encoding="utf-8").replace("\r\n", "\n") if args.source else sample()
+    client = app.test_client()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "trip.md"
+        for text in REQUESTS:
+            path.write_text(document, encoding="utf-8")
+            body = {"messages": [{"role": "user", "content": text}],
+                    "document": {"filename": path.name, "input_dir": tmp, "content": document,
+                                 "disk_revision": hashlib.sha256(path.read_bytes()).hexdigest()}}
+            started = time.monotonic()
+            response = client.post("/api/llm/chat", json=body)
+            data = response.get_json() or {}
+            print(f"\n=== {text}\nHTTP {response.status_code} in {time.monotonic() - started:.0f}s")
+            if response.status_code != 200:
+                print("error:", data.get("error"))
+                continue
+            print("reply:", data["reply"])
+            after = apply_line_edits(document, data["edits"]) if data["edits"] else document
+            before_lines, after_lines = document.split("\n"), after.split("\n")
+            print("removed:", [line for line in before_lines if line and line not in after_lines])
+            print("added:", [line for line in after_lines if line and line not in before_lines])
 
 
 if __name__ == "__main__":

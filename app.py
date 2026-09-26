@@ -15,7 +15,7 @@ from threading import BoundedSemaphore, Lock
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file
-from services.llm import llm, CHAT_MODELS, CHAT_TIMEOUT_SECONDS, CONNECTION_TIMEOUT_SECONDS
+from services.llm import llm, CHAT_TIMEOUT_SECONDS, CONNECTION_TIMEOUT_SECONDS, MAX_CONVERSATION_CHARS
 from services.documents import DOCUMENT_LOCK, atomic_write
 from services.workspaces import (SaveBudgetExceeded, configure_hosted, hosted_mode, input_directory,
                                  output_directory, valid_filename)
@@ -218,10 +218,18 @@ def serve_pdf(name):
 
 # ── page ──────────────────────────────────────────────────────────────────────
 
+# Where the assistant runs, as the settings panel states it. Hosted: the
+# model on nbow.io's own server; locally: whatever MD2PDF_OLLAMA_URL names.
+ASSISTANT_HOSTED = ("The assistant runs on nbow.io's own server. No API key is needed, "
+                    "and your text is not sent to any other company.")
+ASSISTANT_LOCAL = "The assistant runs on the Ollama server this app is configured to use. No API key is needed."
+
+
 @app.get("/")
 def index():
-    options = ''.join(f'<option value="{name}">{name}</option>' for name in CHAT_MODELS)
-    page = (PAGE.replace('__CHAT_MODEL_OPTIONS__', options)
+    where = (ASSISTANT_HOSTED if hosted_mode() else ASSISTANT_LOCAL)
+    page = (PAGE.replace('__ASSISTANT_WHERE__', where)
+            .replace('__CHAT_MAX_MESSAGE__', str(MAX_CONVERSATION_CHARS))
             .replace('__CHAT_TIMEOUT_MS__', str((CHAT_TIMEOUT_SECONDS + 15) * 1000))
             .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000))
             .replace('__SHARE_BASE__', html.escape(SHARE_BASE, quote=True))
@@ -390,7 +398,6 @@ body {
 #share-result-close { background: var(--accent); color: var(--crust); }
 #share-confirm-cancel { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
 #share-confirm-open { background: var(--accent); color: var(--crust); }
-#api-connect { background: var(--accent); color: var(--crust); }
 #chat-bubble {
   position: fixed; bottom: 20px; right: 20px; z-index: 50;
   width: 52px; height: 52px; border: none; border-radius: 50%;
@@ -600,22 +607,11 @@ body {
       </div>
     </div>
 
-    <h3>API connection</h3>
-    <div class="sg">
-      <label for="api-model">Model</label>
-      <select id="api-model">__CHAT_MODEL_OPTIONS__</select>
-      <span class="connection-note">Choose a model, then connect. You can switch anytime for the next message.</span>
-    </div>
-    <div class="sg">
-      <label for="api-key">API key</label>
-      <input type="password" id="api-key" placeholder="Paste your OpenAI API key" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="font-btns">
-      <button class="btn" id="api-connect">Connect</button>
-      <button class="chat-action" id="api-disconnect">Disconnect</button>
-    </div>
-    <p id="api-status" class="connection-note" role="status">Not connected</p>
-    <p class="connection-note">Your key is cleared on reload. Chat includes the open Markdown, including unsaved changes. Requested edits are saved to that file.</p>
+    <h3>Assistant</h3>
+    <p id="api-status" class="connection-note" role="status">Checking the assistant…</p>
+    <p class="connection-note">__ASSISTANT_WHERE__</p>
+    <p class="connection-note">Chat includes the open Markdown, including unsaved changes. Replies can take one to three minutes. Requested edits are saved to that file.</p>
+    <p id="assistant-limit" class="connection-note"></p>
 
     <h3>Share with nbow.io</h3>
     <p class="connection-note">Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.</p>
@@ -690,11 +686,11 @@ body {
     <button id="chat-close" class="chat-action" aria-label="Close chat">&#x2715;</button>
   </div>
   <div id="chat-messages" role="log" aria-live="polite" aria-label="Conversation">
-    <p class="connection-note" id="chat-empty">Connect your API in settings, choose a model, and say hello.</p>
+    <p class="connection-note" id="chat-empty">Ask about the open Markdown, or ask the assistant to edit it.</p>
   </div>
-  <p id="chat-status" role="status">Not connected</p>
+  <p id="chat-status" role="status">Checking the assistant…</p>
   <form id="chat-form">
-    <textarea id="chat-input" rows="2" maxlength="12000" placeholder="Message…" aria-label="Chat message" disabled></textarea>
+    <textarea id="chat-input" rows="2" maxlength="__CHAT_MAX_MESSAGE__" placeholder="Message…" aria-label="Chat message" disabled></textarea>
     <button id="chat-send" class="btn" type="submit" disabled>Send</button>
   </form>
 </section>

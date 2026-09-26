@@ -6,7 +6,6 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
@@ -17,6 +16,7 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 
 import app as editor
 from services.llm import llm
+import services.llm as llm_module
 from services.workspaces import SaveBudgetExceeded, configure_hosted
 
 
@@ -80,13 +80,12 @@ class HostedAppTests(unittest.TestCase):
             self.assertTrue(pdf.data.startswith(b"%PDF"))
         self.assertEqual(other.get("/pdf/private.pdf").status_code, 404)
 
-        body = {"api_key": "test-key", "model": "gpt-4.1-mini",
-                "messages": [{"role": "user", "content": "Read this"}],
+        body = {"messages": [{"role": "user", "content": "Read this"}],
                 "document": {"filename": "private.md", "content": "# Private draft",
                              "disk_revision": saved.json["disk_revision"]}}
-        with patch("services.llm.OpenAI") as provider, patch("services.llm.DefaultHttpxClient"):
+        with patch("services.llm._ollama") as ollama:
             self.assertEqual(other.post("/api/llm/chat", json=body).status_code, 400)
-            provider.return_value.__enter__.return_value.responses.create.assert_not_called()
+            ollama.assert_not_called()
 
     def test_forged_server_paths_and_cross_origin_mutations_are_rejected(self):
         self.client.get("/api/files")
@@ -102,14 +101,13 @@ class HostedAppTests(unittest.TestCase):
                     "filename": "document.md", field: str(self.root)}).status_code, 400)
             self.assertEqual(self.client.post("/api/compile", json={"filename": "../outside.md"}).status_code, 400)
             compiler.assert_not_called()
-        with patch("services.llm.OpenAI") as provider, patch("services.llm.DefaultHttpxClient"):
+        with patch("services.llm._ollama") as ollama:
             response = self.client.post("/api/llm/chat", json={
-                "api_key": "test-key", "model": "gpt-4.1-mini",
                 "messages": [{"role": "user", "content": "Read"}],
                 "document": {"filename": "outside.md", "input_dir": str(self.root),
                              "content": "Keep private", "disk_revision": hashlib.sha256(outside.read_bytes()).hexdigest()}})
             self.assertEqual(response.status_code, 400)
-            provider.return_value.__enter__.return_value.responses.create.assert_not_called()
+            ollama.assert_not_called()
         self.assertEqual(self.client.post("/api/file/document.md", json={"content": "Bad"},
                                          headers={"Origin": "https://another.example"}).status_code, 403)
         self.assertEqual(self.client.post("/api/file/document.md", data="Bad").status_code, 415)
@@ -201,12 +199,14 @@ class HostedAppTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            with patch("services.llm.OpenAI") as factory, patch("services.llm.DefaultHttpxClient"):
-                provider = factory.return_value.__enter__.return_value
-                provider.models.list.return_value = [SimpleNamespace(id="gpt-4.1-mini")]
-                provider.responses.create.return_value = SimpleNamespace(output_text=json.dumps({
-                    "reply": "Updated the title.", "edits": [
-                        {"start_line": 1, "end_line": 1, "replacement": ["# Chat updated"]}]}))
+            def fake_ollama(path, payload=None, timeout=None):
+                # The server's own model: no key, no third-party provider.
+                if path == "/api/tags":
+                    return {"models": [{"name": llm_module.CHAT_MODEL}]}
+                return {"message": {"content": json.dumps({
+                    "reply": "Updated the title.", "edits": [{"find": "# Edited", "replace": "# Chat updated"}]})}}
+            llm_module._STATUS["checked"] = 0.0
+            with patch("services.llm._ollama", side_effect=fake_ollama) as ollama:
                 with sync_playwright() as pw:
                     browser = pw.chromium.launch()
                     try:
@@ -236,8 +236,8 @@ class HostedAppTests(unittest.TestCase):
                         page.locator("#share-confirm-cancel").click()
                         self.assertEqual(page.request.get(origin + PREFIX + "/api/file/trip.md").text(), edited)
 
-                        page.locator("#api-key").fill("browser-test-key")
-                        page.locator("#api-connect").click()
+                        self.assertEqual(page.locator("#api-key, #api-model, #api-connect").count(), 0)
+                        self.assertNotIn("OpenAI", page.content())
                         page.wait_for_function("document.getElementById('api-status').dataset.state === 'ok'")
                         page.locator("#chat-bubble").click()
                         page.locator("#chat-input").fill("Update the title")
@@ -245,8 +245,9 @@ class HostedAppTests(unittest.TestCase):
                         page.wait_for_function("document.getElementById('chat-status').textContent.startsWith('Line edits saved')")
                         expected = edited.replace("# Edited", "# Chat updated")
                         self.assertEqual(page.evaluate("cm.getValue()"), expected)
-                        self.assertNotIn("browser-test-key", page.evaluate("JSON.stringify(localStorage)"))
-                        self.assertEqual(factory.call_args.kwargs["api_key"], "browser-test-key")
+                        chat_calls = [call for call in ollama.call_args_list if call.args[0] == "/api/chat"]
+                        self.assertEqual(len(chat_calls), 1)
+                        self.assertEqual(chat_calls[0].args[1]["model"], llm_module.CHAT_MODEL)
 
                         page.locator("#btn-compile").click()
                         page.wait_for_function("!document.getElementById('btn-download-pdf').disabled", timeout=60000)
@@ -284,8 +285,7 @@ class HostedAppTests(unittest.TestCase):
                         self.assertTrue(page.evaluate("dirty"))
                         self.assertEqual(page.request.get(origin + PREFIX + "/api/file/new-note.md").text(), "External revision")
                         page.reload(wait_until="networkidle")
-                        self.assertEqual(page.locator("#api-key").input_value(), "")
-                        for route in ("models", "chat", "apply"):
+                        for route in ("status", "chat", "apply"):
                             self.assertIn(PREFIX + "/api/llm/" + route, requests)
                         application_requests = [path for path in requests if any(part in path for part in ("/api/", "/static/", "/pdf/"))]
                         self.assertTrue(all(path.startswith(PREFIX + "/") for path in application_requests))

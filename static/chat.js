@@ -1,53 +1,42 @@
-/* Credentials and history live only in this tab's memory. */
+/* Chat with the editing assistant on nbow.io's own server. There is no API key
+   and no model choice: the server runs one model. History lives only in this
+   tab's memory. */
 (() => {
   const el = id => document.getElementById(id);
-  let connected = false, busy = false, loadingModels = false, activeModel = null, history = [], controller = null, revision = 0;
-  const catalog = [...el('api-model').options].map(option => option.value);
-  const selectedModel = () => el('api-model').value;
-  function modelStatus() {
-    status('api-status', connected ? 'Connected · ' + selectedModel() : 'Not connected', connected ? 'ok' : '');
-    el('chat-title').textContent = 'Chat · ' + selectedModel();
-  }
-  function populateModels(models, preferred) {
-    el('api-model').replaceChildren(...models.map(name => new Option(name, name)));
-    el('api-model').value = models.includes(preferred) ? preferred : models[0];
-  }
-  const credentials = () => ({api_key: el('api-key').value.trim()});
+  let available = false, busy = false, model = '', maxChars = 0, history = [], controller = null, revision = 0;
   const snapshot = () => window.markdownChat?.snapshot();
 
   function status(id, message, state = '') {
     el(id).textContent = message;
     el(id).dataset.state = state;
   }
+  function tooLong() {
+    const current = snapshot();
+    // Code points, as the server counts them (not UTF-16 units).
+    return Boolean(current && maxChars && [...current.content].length > maxChars);
+  }
   function controls() {
-    ['api-key', 'api-connect', 'chat-new'].forEach(id => el(id).disabled = busy);
-    el('api-model').disabled = loadingModels;
-    el('chat-input').disabled = busy || !connected || !snapshot();
-    el('chat-send').disabled = busy || !connected || !el('api-model').value || !snapshot();
+    el('chat-new').disabled = busy;
+    el('chat-input').disabled = busy || !available || !snapshot();
+    el('chat-send').disabled = busy || !available || !snapshot();
     el('chat-send').textContent = busy ? 'Wait…' : 'Send';
+  }
+  function readyText() {
+    if (!available) return 'The assistant is not available right now.';
+    if (!snapshot()) return 'Open a Markdown file to start chatting.';
+    if (tooLong()) return 'This document is too long for the assistant. Shorten it, or ask about a shorter document.';
+    return 'Ready · ' + model;
   }
   function clearChat() {
     history = [];
     el('chat-messages').replaceChildren();
     el('chat-input').value = '';
   }
-  function reset(clearKey = false) {
-    revision++;
-    if (controller) controller.abort();
-    connected = false;
-    busy = false;
-    loadingModels = false;
-    activeModel = null;
-    if (clearKey) el('api-key').value = '';
-    populateModels(catalog, selectedModel());
-    clearChat();
-    modelStatus();
-    status('chat-status', 'Connect your API in settings to start chatting.');
-    controls();
-  }
-  async function api(path, body, onProgress = null) {
-    controller = new AbortController();
-    const requestController = controller;
+  // `shared` requests (chat, apply) are cancelled when the file changes; the
+  // status check has its own controller so a file load cannot abort it.
+  async function api(path, body, onProgress = null, shared = true) {
+    const requestController = new AbortController();
+    if (shared) controller = requestController;
     const timeout = Number(el('chat-window').dataset[path === 'chat' ? 'chatTimeout' : 'connectionTimeout']);
     const started = Date.now();
     const timer = setTimeout(() => requestController.abort(), timeout);
@@ -70,7 +59,23 @@
       if (controller === requestController) controller = null;
     }
   }
-  function addMessage(role, text, model = null) {
+  async function checkAssistant() {
+    status('api-status', 'Checking the assistant…');
+    try {
+      const data = await api('status', {}, null, false);
+      model = typeof data.model === 'string' ? data.model : '';
+      maxChars = Number(data.max_document_chars) || 0;
+      available = data.available === true && Boolean(model);
+    } catch (_) {
+      available = false;
+    }
+    el('chat-title').textContent = model ? 'Chat · ' + model : 'Chat';
+    if (maxChars) el('assistant-limit').textContent = 'Assistant document limit (characters): ' + maxChars;
+    status('api-status', available ? 'Ready · ' + model : 'The assistant is not available right now.', available ? 'ok' : 'error');
+    if (!busy) status('chat-status', readyText(), available && !tooLong() ? '' : 'error');
+    controls();
+  }
+  function addMessage(role, text) {
     el('chat-empty')?.remove();
     const message = document.createElement('div');
     message.className = 'chat-message ' + role;
@@ -87,7 +92,8 @@
     el('chat-window').hidden = !open;
     el('chat-bubble').setAttribute('aria-expanded', String(open));
     el('chat-bubble').setAttribute('aria-label', open ? 'Close chat' : 'Open chat');
-    if (open) (connected ? el('chat-input') : el('chat-close')).focus();
+    if (open && !available && !busy) checkAssistant();
+    if (open) (available ? el('chat-input') : el('chat-close')).focus();
     else el('chat-bubble').focus();
   }
 
@@ -97,86 +103,49 @@
     if (event.key === 'Escape') { event.preventDefault(); showChat(false); }
     event.stopPropagation();
   });
-  el('api-key').addEventListener('input', () => reset());
   window.addEventListener('markdown-file-changed', () => {
     revision++;
     if (controller) controller.abort();
     busy = false;
-    loadingModels = false;
-    activeModel = null;
     clearChat();
-    status('chat-status', connected ? 'Context loaded · ' + snapshot()?.filename : 'Connect your API in settings.');
-    controls();
-  });
-  el('api-disconnect').addEventListener('click', () => reset(true));
-  el('api-model').addEventListener('change', () => {
-    modelStatus();
-    if (activeModel) status('chat-status', 'Replying with ' + activeModel + ' · next message: ' + selectedModel());
-    else status('chat-status', connected ? 'Ready · ' + selectedModel() : 'Enter your API key and click Connect.');
+    status('chat-status', available && snapshot() && !tooLong() ? 'Context loaded · ' + snapshot().filename : readyText(),
+      !available || tooLong() ? 'error' : '');
     controls();
   });
   el('chat-new').addEventListener('click', () => {
     clearChat();
-    status('chat-status', connected ? 'Ready · ' + el('api-model').value : 'Connect your API in settings.');
-  });
-  el('api-connect').addEventListener('click', async () => {
-    if (busy) return;
-    if (!credentials().api_key) {
-      status('api-status', 'Enter your API key first.', 'error');
-      el('api-key').focus();
-      return;
-    }
-    reset();
-    const currentRevision = revision;
-    busy = true;
-    loadingModels = true;
-    controls();
-    status('api-status', 'Connecting and loading models…');
-    try {
-      const data = await api('models', credentials());
-      if (revision !== currentRevision) return;
-      if (!Array.isArray(data.models) || !data.models.length) throw new Error('No models returned by the API.');
-      const preferred = selectedModel();
-      populateModels(data.models, preferred);
-      connected = true;
-      modelStatus();
-      status('chat-status', preferred !== selectedModel() ? preferred + ' is unavailable; selected ' + selectedModel() :
-        (snapshot() ? 'Context loaded · ' + snapshot().filename : 'Open a Markdown file to start chatting.'));
-    } catch (error) {
-      if (revision === currentRevision) status('api-status', error.message, 'error');
-    } finally {
-      if (revision === currentRevision) { busy = false; loadingModels = false; controls(); }
-    }
+    status('chat-status', readyText(), available && !tooLong() ? '' : 'error');
   });
 
   el('chat-form').addEventListener('submit', async event => {
     event.preventDefault();
     const text = el('chat-input').value.trim();
-    if (!text || busy || !connected || !snapshot()) return;
+    if (!text || busy || !available || !snapshot()) return;
     if (history.length >= 100) {
       status('chat-status', 'Start a new chat to continue.', 'error');
       return;
     }
+    if (tooLong()) {
+      status('chat-status', readyText(), 'error');
+      return;
+    }
     const currentRevision = revision;
-    const requestModel = selectedModel();
-    activeModel = requestModel;
     const messages = [...history, {role: 'user', content: text}];
     const pending = addMessage('user', text);
     el('chat-input').value = '';
     busy = true;
     controls();
-    status('chat-status', 'Thinking · ' + requestModel);
+    status('chat-status', 'Thinking · ' + model);
     try {
       await window.markdownChat.settle();
       if (revision !== currentRevision) return;
       const documentSnapshot = snapshot();
-      const data = await api('chat', {...credentials(), model: requestModel, messages, document: documentSnapshot}, seconds => {
+      const data = await api('chat', {messages, document: documentSnapshot}, seconds => {
         if (revision !== currentRevision) return;
-        const next = selectedModel() !== requestModel ? ' · next: ' + selectedModel() : '';
-        status('chat-status', (seconds >= 30 ? 'Still working' : 'Thinking') + ' · ' + requestModel + ' · ' + seconds + 's' + next);
+        status('chat-status', (seconds >= 30 ? 'Still working' : 'Thinking') + ' · ' + model + ' · ' + seconds + 's');
       });
       if (revision !== currentRevision) return;
-      if (typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('The API returned no text. Try another model.');
+      if (typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('The assistant returned no answer. Please rephrase your message.');
       if (!Array.isArray(data.edits)) throw new Error('Invalid edit response. Nothing was changed.');
       if (data.edits.length) {
         await window.markdownChat.settle();
@@ -185,19 +154,17 @@
           throw new Error('The Markdown changed while the assistant was replying. Edits were not applied; send your request again.');
         }
         window.markdownChat.lock(true);
-        el('api-disconnect').disabled = true;
         status('chat-status', 'Saving line edits…');
         try {
           const saved = await api('apply', {document: documentSnapshot, disk_revision: data.disk_revision, edits: data.edits});
           window.markdownChat.updated(saved);
         } finally {
           window.markdownChat.lock(false);
-          el('api-disconnect').disabled = false;
         }
       }
       history = [...messages, {role: 'assistant', content: data.reply}];
-      addMessage('assistant', data.reply, requestModel);
-      status('chat-status', data.edits.length ? 'Line edits saved · ' + requestModel + ' · ' + documentSnapshot.filename : 'Ready · ' + selectedModel());
+      addMessage('assistant', data.reply);
+      status('chat-status', data.edits.length ? 'Line edits saved · ' + model + ' · ' + documentSnapshot.filename : readyText());
     } catch (error) {
       if (revision !== currentRevision) return;
       pending.remove();
@@ -206,7 +173,6 @@
     } finally {
       if (revision === currentRevision) {
         busy = false;
-        activeModel = null;
         controls();
         if (!el('chat-window').hidden) el('chat-input').focus();
       }
@@ -218,6 +184,6 @@
       el('chat-form').requestSubmit();
     }
   });
-  modelStatus();
   controls();
+  checkAssistant();
 })();

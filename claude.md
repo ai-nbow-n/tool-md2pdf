@@ -18,7 +18,7 @@ tool-md2pdf/
 ├── .gitignore                  # .venv/, browsers/, data/output/, apikey.txt
 ├── .venv/                      # Python virtual environment (gitignored)
 ├── app.py                      # Flask editor frontend + inline PAGE template (:2380)
-├── requirements.txt            # playwright, markdown, Pygments, flask, openai, bleach
+├── requirements.txt            # playwright, markdown, Pygments, flask, bleach
 ├── requirements-hosted.txt     # requirements.txt + gunicorn (server deployment)
 ├── data/
 │   ├── input/                  # drop .md files here (desktop use)
@@ -31,7 +31,7 @@ tool-md2pdf/
 ├── services/
 │   ├── md2pdf.py               # CLI conversion tool (Playwright + markdown)
 │   ├── documents.py            # line edits, revision checks, atomic saves
-│   ├── llm.py                  # /api/llm blueprint (OpenAI, transient key)
+│   ├── llm.py                  # /api/llm blueprint (server's Ollama, qwen3:1.7b)
 │   └── workspaces.py           # hosted sessions, per-browser workspaces, cleanup
 ├── static/
 │   ├── chat.js                 # chat UI
@@ -50,7 +50,7 @@ tool-md2pdf/
 │   ├── md2pdf-chromium.apparmor  # Chromium user-namespace permission on Ubuntu
 │   └── md2pdf.env.example      # /etc/md2pdf.env template
 ├── scripts/
-│   └── live_chat_smoke.py      # explicit, billable live chat test (local key file)
+│   └── live_chat_smoke.py      # explicit live chat test against a real Ollama (free)
 └── tests/                      # unittest suite (several drive real Chromium)
 ```
 
@@ -162,27 +162,40 @@ ordinary desktop use.
 
 ## Chat assistant
 
-`services/llm.py` is a `/api/llm` blueprint (`/models`, `/chat`, `/apply`) over
-the OpenAI SDK; `services/documents.py` owns the document side. Full behaviour is
-in [docs/chat.md](docs/chat.md), with the timeout investigation in
+`services/llm.py` is a `/api/llm` blueprint (`/status`, `/chat`, `/apply`) over
+the server's own Ollama (`MD2PDF_OLLAMA_URL`, default loopback; model
+`MD2PDF_LLM_MODEL`, default `qwen3:1.7b`, Apache 2.0 — never `qwen2.5:3b`,
+whose licence is research-only); `services/documents.py` owns the
+document side. Full behaviour is in [docs/chat.md](docs/chat.md), with the
+measurements behind every budget in
 [docs/live-chat-results.md](docs/live-chat-results.md). What matters in the code:
 
-- **The key is never stored.** It arrives in each request body and lives only in
-  the page session; provider-side response storage is disabled. Chat history is
-  per tab. `apikey.txt` is gitignored and only `scripts/live_chat_smoke.py`
-  reads it.
-- **Edits are line ranges, validated here.** The model returns 1-based inclusive
-  ranges against the snapshot it was given (at most 100). `apply_line_edits()`
-  rejects overlaps and reused start lines; one corrective round trip is allowed
-  inside the same time budget. Nothing is written until a whole batch validates.
+- **No third party, no key.** Since 2026-09-25 the assistant runs on the
+  server's model; it replaced a bring-your-own-key OpenAI proxy, and nothing may
+  send document text off the server again without the privacy policy saying so
+  first. Chat history is per tab; Ollama keeps only its model and prompt cache.
+- **Edits are quoted passages, validated here.** The model returns
+  `{"find", "replace"}` pairs; `to_line_edits()` locates each passage exactly
+  once (character for character; overlapping occurrences count as ambiguous;
+  no whitespace tolerance — it once edited inside words), rejects missing,
+  ambiguous and overlapping ones,
+  and converts the result to 1-based line edits that `apply_line_edits()`
+  replays and checks. One corrective round trip is allowed inside the same time
+  budget. Nothing is written until a whole batch validates. Line numbers were
+  tried first and a 3B model got them wrong (see the results doc).
 - **Saves are optimistic and atomic.** Every read returns a SHA-256
   `disk_revision`; saves and chat edits pass it back and get HTTP 409 if the file
   changed underneath. Writes go through `atomic_write()` under `DOCUMENT_LOCK`.
-- **The document is data.** `EDIT_INSTRUCTIONS` says so explicitly, and the app —
-  not the model — performs every write. Keep it that way when editing the prompt.
-- Budgets: 180 s per generation, 30 s for connection checks, 200,000 characters
-  of document. The browser timeouts are generated from these constants, so change
-  them in `services/llm.py` and the page follows.
+- **The document is data.** `INSTRUCTIONS` says so explicitly, the document sits
+  inside `<document>` tags, and the app — not the model — performs every write.
+  Keep it that way when editing the prompt.
+- **The server has 2 vCPUs.** One generation at a time (`_SLOT`, others get 429);
+  180 s per generation, 10 s for status checks; documents up to 4,000 characters
+  and conversations up to 4,000; hosted, 600 s of generation per network per
+  hour, charged after the fact and held as keyed hashes in memory like the save
+  allowance. The browser timeouts are
+  generated from these constants, so change them in `services/llm.py` and the
+  page follows.
 
 ---
 
@@ -233,12 +246,12 @@ and `tests/` is deliberately not a package.
 | `test_hosted_renderer.py` | Untrusted Markdown through the same Chromium path; no network |
 | `test_hosted_app.py` | Hosted routes, session isolation, guards, size limits |
 | `test_workspaces.py` | Workspace lifecycle, cleanup, path refusals, save validation |
-| `test_llm.py` | Line-edit validation, revision conflicts, timeouts, correction path |
-| `test_chat_ui.py` | Browser chat flow against a fake OpenAI client |
+| `test_llm.py` | Find/replace conversion, line edits, revision conflicts, caps, busy slot, network allowance, timeouts, correction path |
+| `test_chat_ui.py` | Browser chat flow against a fake Ollama |
 | `test_deploy.py` | Nginx edit targets only the website HTTPS block and is repeatable |
 
-`scripts/live_chat_smoke.py` is the only test that spends money: it is explicit,
-reads a local key file, and writes to temporary copies. `deploy/smoke.py` checks
+`scripts/live_chat_smoke.py` is the only test that runs the real model: it is
+explicit, costs nothing, and writes to temporary copies. `deploy/smoke.py` checks
 an installed hosted service (loopback by default, `--url` for the public route)
 without credentials, creating only synthetic workspaces.
 

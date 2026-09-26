@@ -67,7 +67,8 @@ sudo install -m 600 deploy/md2pdf.env.example /etc/md2pdf.env
 
 Replace `MD2PDF_SECRET_KEY` in `/etc/md2pdf.env` with the output of
 `.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))'`.
-Keep this key stable across restarts. No provider API key belongs in this file.
+Keep this key stable across restarts. No provider API key belongs in this file:
+the assistant uses the server's own Ollama (see `deploy/md2pdf.env.example`).
 
 ```sh
 sudo install -m 644 deploy/md2pdf.service deploy/md2pdf-cleanup.service deploy/md2pdf-cleanup.timer /etc/systemd/system/
@@ -96,8 +97,9 @@ slots are shared by its threads. Additional workers require shared locking.
 
 Visitors start with an empty `document.md`, can create or open Markdown files,
 edit and save them, compile with the usual layout options, and download Markdown
-or PDF. The optional editing assistant uses the visitor's own API key and the
-existing transient proxy. Keys and chat history are never saved by the service.
+or PDF. The optional editing assistant runs on the server's own model
+(`qwen3:1.7b` under Ollama, on loopback; pull it before deploying); no document text leaves the server and
+chat history is never saved by the service.
 
 An essential, signed `md2pdf_session` cookie selects an isolated workspace.
 Client-supplied server directories are rejected everywhere, including assistant

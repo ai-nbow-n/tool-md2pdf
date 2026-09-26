@@ -1,28 +1,49 @@
-# Live timeout investigation
+# Live results: small models on the production VPS
 
-Tested on 6 September 2026 using the locally supplied API key. The request was
-“remove salzburg from the trip and make the diagram coherent”, with the full
-current itinerary as context. All writes targeted temporary/output copies.
+Measured on 25–26 September 2026 against the server's own Ollama (0.16.3) on
+the VPS's 2 vCPUs (AMD EPYC 9354P, AVX-512, no GPU, 7.9 GB RAM, no swap). Ollama
+used both threads. The assistant replaced an earlier OpenAI-based one on these
+dates; those results no longer apply.
 
-| Configuration | Model | Time | Result |
+## Licences first
+
+| Model | Licence | Hosted use on nbow.io |
+|---|---|---|
+| `qwen3:1.7b` | Apache 2.0 | yes: the default |
+| `qwen2.5:1.5b` | Apache 2.0 | allowed, but see its results below |
+| `qwen2.5:3b` | Qwen RESEARCH LICENSE: "research or evaluation purposes only"; commercial use needs a licence from Alibaba Cloud | **no** |
+
+Read a model's licence with `ollama show <model> --license` before configuring it.
+
+## Raw speed of qwen2.5:3b
+
+One request on an 84-line, 2,700-character itinerary with the edit schema as
+Ollama's structured output:
+
+| Prompt format | Prompt tokens | Reading | Writing | Total |
+|---|---|---|---|---|
+| numbered lines, line-range edits | 1,117 | 88 s (12.7 tok/s) | 150 tok in 28 s (5.4 tok/s) | 137 s, incl. 17 s model load |
+| plain document, find/replace edits | 841 | 58 s (14.4 tok/s) | 219 tok in 44 s (5.0 tok/s) | 107 s, model warm |
+
+The line-range answer deleted the wrong ranges (parts of four days instead of
+Salzburg's). That is why the app uses find/replace edits.
+
+## End to end, through `services/llm.py`
+
+`scripts/live_chat_smoke.py`: a 1,600-character itinerary, three requests, each
+on a fresh copy.
+
+| Request | qwen2.5:3b | qwen2.5:1.5b | qwen3:1.7b |
 |---|---|---|---|
-| Original 60-second timeout | GPT-5 | 61.22 s | HTTP 504 timeout |
-| Original configuration | GPT-4.1 mini | 4.25 s | Valid edits, but missed Salzburg references |
-| 180-second budget, low reasoning | GPT-5 | 40.62 s | 5 valid edits; Salzburg references removed; diagram rendered |
-| 180-second budget, low reasoning | GPT-4.1 mini | 6.19 s | 3 valid edits, but missed Salzburg references; reasoning option is omitted for this model |
-| Before correction handling | GPT-5 mini | 17.36 s | Overlapping edit ranges rejected; no save |
-| With bounded correction handling | GPT-5 mini | 20.19 s | 7 valid edits; Salzburg references removed; diagram rendered |
+| Change the title | 65 s (cold), correct | 24 s, claimed a change and returned no edit | 43 s (cold), changed, but dropped the `#` heading marker |
+| Remove Salzburg's day, fix the totals | 32 s, left Salzburg's table rows in | 27 s, no usable edits; nothing changed | 22 s, correct: heading, text, table row and totals |
+| How many cities, which is last? | 14 s, wrong (counted five) | 17 s, correct, but also rewrote the totals line | 9 s, correct, no edit |
 
-Times are individual observations, not performance guarantees. The GPT-5 mini
-failure contained a deletion within another replacement range. The backend now
-asks for one corrected batch when validation fails, sharing the original
-180-second time budget. A subsequent live request passed; a deterministic unit
-test separately verifies the correction path.
+qwen3:1.7b is the default: licence-clean, the fastest, and the only one to get
+the multi-part edit right. The 3B figures were measured before the review
+removed whitespace-tolerant matching; the other two after.
 
-The browser timeout is generated from backend settings and includes a 15-second
-grace period. It displays elapsed time instead of appearing idle while the API
-works. No original itinerary files were changed by these tests.
-
-Raw timing summaries and edited test copies are in the ignored `data/output/`
-directory. The key is never printed or included in reports; `apikey.txt` is
-ignored by Git. See [chat.md](chat.md) for the live test command.
+Times are single observations, not guarantees. A small model still slips (the
+dropped `#`); editor Undo reverses a chat edit. Larger models (7B and up) would
+be more accurate but at least twice as slow on this hardware, which does not fit
+the 180 s budget.
