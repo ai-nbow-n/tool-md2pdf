@@ -1,0 +1,54 @@
+md2pdf
+Copyright 2026 Nicolas Gonzalez Albornoz
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The name "nbow", the nbow logo (static/nbow.ico) and the domain nbow.io are not
+licensed under the Apache License (see its section 6).
+
+-------------------------------------------------------------------------------
+Third-party software shipped with md2pdf
+-------------------------------------------------------------------------------
+
+The browser assets below are shipped unmodified in static/vendor/ and served
+to the browser by the hosted editor. Their licences are listed as published by
+each project.
+
+CodeMirror 5.65.16
+  MIT License. Copyright (C) 2017 by Marijn Haverbeke and others.
+  Licence text: static/vendor/codemirror/LICENSE
+  Source: https://github.com/codemirror/codemirror5
+
+Mermaid 12.0.0 (static/vendor/mermaid.min.js)
+  MIT License. Copyright (c) 2014 - 2022 Knut Sveidqvist.
+  Licence text: static/vendor/mermaid.LICENSE
+  Source: https://github.com/mermaid-js/mermaid
+
+  mermaid.min.js is Mermaid's own build. It is built together with the
+  packages Mermaid 12.0.0 depends on, which keep their own licences:
+
+  - ELK (Eclipse Layout Kernel), as elkjs: Eclipse Public License 2.0.
+    The bundle contains it in object code form. Its source code is available
+    under the EPL 2.0 at https://github.com/kieler/elkjs (every release:
+    https://github.com/kieler/elkjs/releases) and
+    https://github.com/eclipse/elk; licence text:
+    https://www.eclipse.org/legal/epl-2.0/
+  - chevrotain: Apache License 2.0.
+  - DOMPurify 3.4.12: Apache License 2.0 or Mozilla Public License 2.0, at
+    the user's choice. (c) Cure53 and other contributors.
+  - d3: ISC License. d3-sankey: BSD 3-Clause License.
+  - lodash-es: MIT License. Copyright OpenJS Foundation and other
+    contributors; based on Underscore.js, Copyright Jeremy Ashkenas,
+    DocumentCloud and Investigative Reporters & Editors.
+  - cytoscape, cytoscape-cose-bilkent, cytoscape-fcose: MIT License.
+  - dagre-d3-es, dayjs, KaTeX, marked, roughjs, khroma, stylis, ts-dedent,
+    uuid, @braintree/sanitize-url, @iconify/utils, @upsetjs/venn.js,
+    es-toolkit, @mermaid-js/parser (with langium and vscode-jsonrpc):
+    MIT License.
+
+  The licence notices Mermaid's build preserved are kept at the end of
+  mermaid.min.js.
+
+Python dependencies (requirements.txt, requirements-hosted.txt) are installed
+from PyPI under their own licences and are not shipped in this repository.
+PDFs are rendered by Chromium through Playwright; neither is shipped here.

@@ -1,6 +1,9 @@
 /* Translate interface chrome only; document and conversation content stay intact. */
 (() => {
   const strings = {
+    'nbow.io — Legal notice': ['nbow.io — Impressum', 'nbow.io — Aviso legal'],
+    'Privacy policy': ['Datenschutzerklärung', 'Política de privacidad'],
+    'Licence: Apache 2.0 · notices': ['Lizenz: Apache 2.0 · Hinweise', 'Licencia: Apache 2.0 · avisos'],
     'New': ['Neu', 'Nuevo'],
     'Open Markdown': ['Markdown öffnen', 'Abrir Markdown'],
     'Download Markdown': ['Markdown herunterladen', 'Descargar Markdown'],
@@ -149,10 +152,20 @@
     if (value !== rendered) write(rendered);
   }
   const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'share-status', 'share-confirm', 'share-result'];
+  // The legal notice and privacy policy in the interface language, on the nbow.io the
+  // share window also uses (a local website checkout when NBOW_SHARE_BASE says so).
+  const shareOpen = document.getElementById('share-open');
+  const legalBase = ((shareOpen && shareOpen.dataset.shareBase) || 'https://nbow.io').replace(/\/+$/, '');
+  function renderLegalLinks() {
+    for (const link of document.querySelectorAll('a[data-legal]')) {
+      link.href = `${legalBase}/${language}/${link.dataset.legal}`;
+    }
+  }
   function render() {
     observer.disconnect();
     document.documentElement.lang = language;
     selector.value = language;
+    renderLegalLinks();
     const targets = roots.map(id => document.getElementById(id)).filter(Boolean);
     targets.push(...document.querySelectorAll('.pane-bar'));
     for (const root of targets) {
