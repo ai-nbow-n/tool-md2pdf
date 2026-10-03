@@ -8,8 +8,11 @@ editor load without contacting a third-party CDN.
 
 `mermaid.min.js` is Mermaid **12.0.0**, downloaded from
 <https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js>.
-Its upstream MIT license is in `mermaid.LICENSE`; bundled dependency notices
-are preserved in the JavaScript.
+Its upstream MIT license is in `mermaid.LICENSE`. The bundle also contains the
+packages Mermaid depends on, ELK under the Eclipse Public License 2.0 among them;
+the build kept only some of their notices, so all of them are listed, with their
+licences and sources, in the repository's `NOTICE`. Update that file with the
+bundle.
 
 SHA-256: `28fca7ae6ebc7ed7bb63bde63136a74bfef14f296a57e403657eeb8b32836073`
 
