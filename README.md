@@ -34,7 +34,7 @@ Deployment on a server is described in [docs/hosting.md](docs/hosting.md).
 ## Licence
 
 md2pdf is licensed under the [Apache License 2.0](LICENSE).
-Copyright 2026 Nicolas Gonzalez Albornoz.
+Copyright 2026 Dr. Gonzalez Albornoz, Nicolas.
 
 It ships CodeMirror and Mermaid, and Mermaid's build includes further open-source
 packages, among them ELK under the Eclipse Public License 2.0. All of them keep their own
