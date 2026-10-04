@@ -1,4 +1,4 @@
-"""Markdown editing assistant on nbow.io's own language model.
+"""Markdown editing assistant on the site's own language model.
 
 The model runs on the same server under Ollama and is reached on the loopback
 interface. Nothing is sent to another company, there is no API key, and neither

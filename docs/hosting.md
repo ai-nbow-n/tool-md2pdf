@@ -1,94 +1,73 @@
-# md2pdf on nbow.io
+# md2pdf on instrumentainternationalia.com
 
-The website mounts the live app at
-`https://nbow.io/en/products/aiconsulting/code-agents/md2pdf/`
-(also `de` and `es`). Unlike the Treatise's static export, PDF compilation and
-the editing assistant need a running Python service. The website proxies this
-path to a loopback-only service; the editor, API, scripts and PDFs all use the
-same localized prefix.
+The site mounts the live app at `https://instrumentainternationalia.com/md2pdf/`.
+The site itself is static (Astro, served by nginx), but PDF compilation and the
+editing assistant need a running Python service, so nginx proxies `/md2pdf/` to a
+loopback-only Gunicorn and tells the app its prefix with `X-Forwarded-Prefix`.
+The editor, API, scripts and PDFs all live under that prefix.
 
-## Install the service on the website VPS
+## Install the service on the VPS
 
-The local website Actions console (`http://127.0.0.1:5055`) provides the normal
-release flow. Commit and push md2pdf from its repository card, then run the
-**deploy-md2pdf** workflow using that commit as its md2pdf ref. This provisions
-or updates the Python service through `deploy/install.sh`, including Chromium's
-AppArmor namespace permission on Ubuntu, the essential session secret (created
-once), systemd units, and Nginx paths for the editor's assets and long requests.
-The installer runs a real Markdown/Mermaid conversion and verifies isolation
-before reloading Nginx. It keeps a backup of the original site outside Nginx's
-enabled directory and restores configuration if validation fails.
-
-Then commit/push the website card to run **build-and-deploy**. The two workflows
-share the deployment queue. Neither enables or triggers **sync-treatise**.
-The md2pdf workflow lives in the website repository so it uses the existing
-VPS credentials and appears alongside the website deployment in the console.
-
-The manual setup below is an alternative to that installer.
-
-### One-time deployment account permission
-
-The website SSH account originally has permission only to restart `nbow`.
-An administrator installs the reviewed wrapper once (run from this checkout):
+These commands assume a Debian/Ubuntu server, a checkout at `/opt/md2pdf`, Python
+3.10 or newer and the site's nginx server block already in place (a `server`
+block with `server_name instrumentainternationalia.com www.instrumentainternationalia.com;`
+and `listen 443 ssl;`). Run them as root.
 
 ```sh
-sudo install -o root -g root -m 755 deploy/run-release.sh /usr/local/sbin/deploy-md2pdf
-sudo visudo -f /etc/sudoers.d/md2pdf
+git clone https://github.com/nicofreeride/tool-md2pdf.git /opt/md2pdf
+cd /opt/md2pdf
+bash deploy/install.sh
 ```
 
-For this VPS's `deploy` account, the rule is:
+`deploy/install.sh` does the whole thing and is safe to run again for updates:
+installs `python3-venv` and the DejaVu fonts, creates the virtualenv from
+`requirements-hosted.txt`, installs Playwright's Chromium with its system
+libraries under `/opt/md2pdf/browsers`, creates the unprivileged `md2pdf` user
+and `/var/lib/md2pdf/workspaces` (mode 700), writes `/etc/md2pdf.env` once with
+a random `MD2PDF_SECRET_KEY` (and refuses an existing file with a weak key or
+other paths), loads the AppArmor profile Chromium's sandbox needs on Ubuntu
+24.04+ (`apparmor_restrict_unprivileged_userns`), installs and starts the
+systemd units, runs `deploy/smoke.py` (a real Markdown/Mermaid conversion plus
+an isolation check against the service), and finally `deploy/configure_nginx.py`
+adds the `/md2pdf/` locations to the site's HTTPS block, validates with `nginx -t`
+and reloads. If validation fails the original configuration is restored; a copy
+of the site file before the first change is kept under `/var/backups/md2pdf/`.
 
-```sudoers
-deploy ALL=(root) NOPASSWD: /usr/local/sbin/deploy-md2pdf
-```
+Updating later is the same: `git -C /opt/md2pdf pull` (or check out a commit),
+then `bash deploy/install.sh`. `deploy/run-release.sh` is a root-owned wrapper
+for exactly that (one 40-character commit SHA, no local modifications allowed)
+for a deploy account allowed to run only it through sudo; it is optional.
 
-The wrapper accepts exactly one 40-character commit SHA, checks out only the
-fixed public md2pdf repository under `/opt/md2pdf`, refuses local modifications,
-and runs its installer. The Actions account gets no general `sudo bash`, `git`,
-or unrestricted sudo permission. Validate the rule with `sudo visudo -cf
-/etc/sudoers.d/md2pdf`. Update the root-owned wrapper deliberately when its
-source changes; ordinary application deployments do not replace it.
-
-These commands assume a Debian/Ubuntu server, a checkout at `/opt/md2pdf`, and
-Python 3.10 or newer. Run the administrative commands with sudo as necessary.
-Publish the changes in both `tool-md2pdf` and the sibling `website` repository
-before deploying; installing only one side does not expose a working editor.
+Manual equivalent, if the installer cannot be used:
 
 ```sh
-git clone https://github.com/ai-nbow-n/tool-md2pdf.git /opt/md2pdf
 cd /opt/md2pdf
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-hosted.txt
 PLAYWRIGHT_BROWSERS_PATH=/opt/md2pdf/browsers .venv/bin/python -m playwright install --with-deps chromium
-sudo useradd --system --home-dir /var/lib/md2pdf --shell /usr/sbin/nologin md2pdf
-sudo install -d -o md2pdf -g md2pdf -m 700 /var/lib/md2pdf/workspaces
-sudo install -m 600 deploy/md2pdf.env.example /etc/md2pdf.env
+useradd --system --home-dir /var/lib/md2pdf --shell /usr/sbin/nologin md2pdf
+install -d -o md2pdf -g md2pdf -m 700 /var/lib/md2pdf/workspaces
+install -m 600 deploy/md2pdf.env.example /etc/md2pdf.env   # then set MD2PDF_SECRET_KEY
+install -m 644 deploy/md2pdf.service deploy/md2pdf-cleanup.service deploy/md2pdf-cleanup.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now md2pdf md2pdf-cleanup.timer
+python3 deploy/configure_nginx.py && systemctl reload nginx
 ```
 
-Replace `MD2PDF_SECRET_KEY` in `/etc/md2pdf.env` with the output of
-`.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))'`.
-Keep this key stable across restarts. No provider API key belongs in this file:
-the assistant uses the server's own Ollama (see `deploy/md2pdf.env.example`).
-
-```sh
-sudo install -m 644 deploy/md2pdf.service deploy/md2pdf-cleanup.service deploy/md2pdf-cleanup.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now md2pdf md2pdf-cleanup.timer
-```
+`MD2PDF_SECRET_KEY` is the output of `.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))'`
+and must stay stable across restarts. No provider API key belongs in `/etc/md2pdf.env`:
+the assistant uses the server's own Ollama (`deploy/md2pdf.env.example` documents
+`MD2PDF_OLLAMA_URL` and `MD2PDF_LLM_MODEL`; pull `qwen3:1.7b` before enabling it).
+Without Ollama the editor and the PDF conversion work as usual and the assistant
+reports itself unavailable.
 
 Run the service as its dedicated unprivileged user. Chromium's hosted renderer
 requires its sandbox; Linux user namespaces must be available to that user.
 Do not turn off the browser sandbox to work around a host restriction.
 
-In the website repository, set the GitHub Actions repository variable
-`MD2PDF_UPSTREAM` to `http://127.0.0.1:2380`, then deploy the website changes.
-Both website and Treatise deploy workflows preserve this setting in
-`.env.production`. The website's missing-service page gives a clear temporary
-unavailability message until the backend is configured and reachable.
-
 Keep port 2380 bound to loopback. Flask trusts the scheme and path prefix set by
-exactly one website proxy. That proxy replaces incoming forwarding headers;
-it must be the only caller able to reach the backend. This follows
+exactly one nginx proxy (`deploy/nginx-md2pdf-proxy.conf`), which replaces
+incoming forwarding headers; it must be the only caller able to reach the
+backend. This follows
 [Flask's reverse-proxy guidance](https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/).
 Use one Gunicorn worker: file revision locks and the two simultaneous compilation
 slots are shared by its threads. Additional workers require shared locking.
@@ -98,7 +77,7 @@ slots are shared by its threads. Additional workers require shared locking.
 Visitors start with an empty `document.md`, can create or open Markdown files,
 edit and save them, compile with the usual layout options, and download Markdown
 or PDF. The optional editing assistant runs on the server's own model
-(`qwen3:1.7b` under Ollama, on loopback; pull it before deploying); no document text leaves the server and
+(`qwen3:1.7b` under Ollama, on loopback); no document text leaves the server and
 chat history is never saved by the service.
 
 An essential, signed `md2pdf_session` cookie selects an isolated workspace.
@@ -124,9 +103,9 @@ is sanitized before rendering, and the renderer cannot fetch document URLs or
 local files. Remote images and embedded active HTML are therefore omitted in
 the hosted version. Ordinary desktop conversion remains unchanged.
 
-Conversion processes text on nbow.io. It does **not** add it to the research
-corpus. **Share with nbow.io** still opens the existing consent page and requires
-the visitor's explicit confirmation, using the `md2pdf-web` client identifier.
+Conversion processes text on the server and nothing else: there is no corpus,
+no sharing and no analytics. The footer links to the site's legal notice and
+privacy page (`MD2PDF_SITE_BASE`, default `https://instrumentainternationalia.com`).
 
 ## Local verification
 
@@ -138,7 +117,6 @@ $env:MD2PDF_WORKSPACE_ROOT = "$env:TEMP/md2pdf-hosted-test"
 .venv/Scripts/python app.py
 ```
 
-For the website dev server, set `MD2PDF_UPSTREAM=http://127.0.0.1:2380` and open
-the localized app route. Two separate browser profiles must see different files;
-saving, compilation, PDF downloads and chat must stay under that route. Unset
-the `MD2PDF_*` variables to run the original local editor again.
+Two separate browser profiles must see different files; saving, compilation,
+PDF downloads and chat must stay under the app's route. Unset the `MD2PDF_*`
+variables to run the original local editor again.

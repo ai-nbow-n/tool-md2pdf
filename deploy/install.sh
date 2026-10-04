@@ -35,8 +35,7 @@ if not path.exists():
     with os.fdopen(descriptor, 'w') as stream:
         stream.write('MD2PDF_HOSTED=1\nMD2PDF_SECRET_KEY=' + secrets.token_hex(32) + '\n'
                      'MD2PDF_WORKSPACE_ROOT=/var/lib/md2pdf/workspaces\n'
-                     'PLAYWRIGHT_BROWSERS_PATH=/opt/md2pdf/browsers\n'
-                     'NBOW_SHARE_BASE=https://nbow.io\n')
+                     'PLAYWRIGHT_BROWSERS_PATH=/opt/md2pdf/browsers\n')
 values = dict(line.split('=', 1) for line in path.read_text().splitlines()
               if line and not line.startswith('#') and '=' in line)
 required = {'MD2PDF_HOSTED': '1', 'MD2PDF_WORKSPACE_ROOT': '/var/lib/md2pdf/workspaces',

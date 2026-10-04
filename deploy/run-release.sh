@@ -8,7 +8,7 @@ if [ "$(id -u)" -ne 0 ] || [ "$#" -ne 1 ] || [[ ! "$1" =~ ^[0-9a-f]{40}$ ]]; the
 fi
 revision=$1
 repo_dir=/opt/md2pdf
-repository=https://github.com/ai-nbow-n/tool-md2pdf.git
+repository=https://github.com/nicofreeride/tool-md2pdf.git
 umask 022
 if [ ! -e "$repo_dir" ]; then
   git clone --depth=1 "$repository" "$repo_dir"

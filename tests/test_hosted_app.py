@@ -221,9 +221,8 @@ class HostedAppTests(unittest.TestCase):
                         page.wait_for_function("window.markdownChat?.snapshot()?.filename === 'document.md'")
                         self.assertTrue(page.locator("#s-in").is_hidden())
                         self.assertTrue(page.locator("#s-out").is_hidden())
-                        self.assertEqual(page.locator("#share-open").get_attribute("data-client-id"), "md2pdf-web")
-                        # The footer icon comes from this app, not from nbow.io or GitHub.
-                        self.assertEqual(page.evaluate("document.querySelector('.panel-footer img').naturalWidth"), 32)
+                        # The footer icon comes from this app, not from the site or GitHub.
+                        self.assertEqual(page.evaluate("document.querySelector('.panel-footer img').naturalWidth"), 64)
 
                         imported = "# Imported\n\nM\u00fcnchen\n"
                         page.locator("#file-upload").set_input_files({
@@ -234,7 +233,6 @@ class HostedAppTests(unittest.TestCase):
                         page.evaluate("text => cm.setValue(text)", edited)
                         page.locator("#btn-save").click()
                         page.wait_for_function("!dirty && document.getElementById('status-msg').textContent === 'Saved'")
-                        page.locator("#share-confirm-cancel").click()
                         self.assertEqual(page.request.get(origin + PREFIX + "/api/file/trip.md").text(), edited)
 
                         self.assertEqual(page.locator("#api-key, #api-model, #api-connect").count(), 0)
@@ -253,7 +251,6 @@ class HostedAppTests(unittest.TestCase):
                         page.locator("#btn-compile").click()
                         page.wait_for_function("!document.getElementById('btn-download-pdf').disabled", timeout=60000)
                         self.assertEqual(page.locator("#status-msg").inner_text(), "Compiled OK")
-                        page.locator("#share-confirm-cancel").click()
                         with page.expect_download() as pdf_event:
                             page.locator("#btn-download-pdf").click()
                         pdf = pdf_event.value

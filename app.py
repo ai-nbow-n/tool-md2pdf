@@ -26,17 +26,8 @@ SCRIPT  = BASE / "services" / "md2pdf.py"
 DEF_IN  = BASE / "data" / "input"
 DEF_OUT = BASE / "data" / "output"
 
-# Where the optional "Share with nbow.io" button sends the visitor.
-#
-# It is a whole origin and not a path because static/share.js checks every
-# incoming postMessage against it: the consent window is the only page allowed
-# to ask this app for a document, and the check is what makes that true. Point
-# it at http://localhost:4321 to work against a local copy of the website.
-#
-# Nothing is sent from here. The document travels only after the visitor
-# confirms it in that window, which runs on nbow.io and enforces the cookie
-# consent, the acknowledgements and the hourly limit. See docs/share.md.
-SHARE_BASE = os.environ.get("NBOW_SHARE_BASE", "https://nbow.io").rstrip("/")
+# The site that hosts this editor; the footer links to its legal notice and privacy page.
+SITE_BASE = os.environ.get("MD2PDF_SITE_BASE", "https://instrumentainternationalia.com").rstrip("/")
 
 app = Flask(__name__)
 configure_hosted(app)
@@ -219,8 +210,8 @@ def serve_pdf(name):
 # ── page ──────────────────────────────────────────────────────────────────────
 
 # Where the assistant runs, as the settings panel states it. Hosted: the
-# model on nbow.io's own server; locally: whatever MD2PDF_OLLAMA_URL names.
-ASSISTANT_HOSTED = ("The assistant runs on nbow.io's own server. No API key is needed, "
+# model on the site's own server; locally: whatever MD2PDF_OLLAMA_URL names.
+ASSISTANT_HOSTED = ("The assistant runs on this site's own server. No API key is needed, "
                     "and your text is not sent to any other company.")
 ASSISTANT_LOCAL = "The assistant runs on the Ollama server this app is configured to use. No API key is needed."
 
@@ -232,10 +223,9 @@ def index():
             .replace('__CHAT_MAX_MESSAGE__', str(MAX_CONVERSATION_CHARS))
             .replace('__CHAT_TIMEOUT_MS__', str((CHAT_TIMEOUT_SECONDS + 15) * 1000))
             .replace('__CONNECTION_TIMEOUT_MS__', str((CONNECTION_TIMEOUT_SECONDS + 15) * 1000))
-            .replace('__SHARE_BASE__', html.escape(SHARE_BASE, quote=True))
+            .replace('__SITE_BASE__', html.escape(SITE_BASE, quote=True))
             .replace('__APP_BASE__', html.escape(request.script_root, quote=True))
-            .replace('__HOSTED__', 'true' if hosted_mode() else 'false')
-            .replace('__SHARE_CLIENT__', 'md2pdf-web' if hosted_mode() else 'md2pdf-desktop'))
+            .replace('__HOSTED__', 'true' if hosted_mode() else 'false'))
     return Response(page, content_type="text/html; charset=utf-8")
 
 
@@ -252,7 +242,6 @@ PAGE = r"""<!DOCTYPE html>
   href="__APP_BASE__/static/vendor/codemirror/dracula.min.css">
 <script src="__APP_BASE__/static/vendor/codemirror/codemirror.min.js"></script>
 <script src="__APP_BASE__/static/vendor/codemirror/markdown.min.js"></script>
-<link rel="stylesheet" href="__APP_BASE__/static/corpus-info.css">
 <style>
 :root {
   --panel-w: 272px;
@@ -371,33 +360,6 @@ body {
 .connection-note { font-size: 11px; color: var(--muted); line-height: 1.5; }
 #api-status[data-state=ok] { color: var(--green); }
 #api-status[data-state=error], #chat-status[data-state=error] { color: var(--red); }
-#share-status[data-state=ok] { color: var(--green); }
-#share-status[data-state=error] { color: var(--red); }
-#share-receipt {
-  display: block; margin-top: 6px; padding: 5px 7px;
-  background: var(--bg); border: 1px solid var(--green); border-radius: 5px;
-  color: var(--green); font-family: monospace; font-size: 11.5px;
-  letter-spacing: .04em; user-select: all; word-break: break-all;
-}
-#share-receipt[hidden] { display: none; }
-#share-confirm, #share-result {
-  margin: auto; padding: 24px; width: min(440px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px); overflow-y: auto;
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 8px 36px #0006;
-}
-#share-confirm::backdrop, #share-result::backdrop { background: #0009; }
-#share-confirm h2, #share-result h2 { font-size: 19px; margin-bottom: 14px; }
-#share-confirm p, #share-result p { font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
-#share-confirm .share-actions, #share-result .share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-#share-confirm .btn, #share-result .btn { min-height: 44px; white-space: normal; }
-#share-result[data-state=ok] h2 { color: var(--green); }
-#share-result[data-state=error] h2 { color: var(--red); }
-#share-result-receipt { display: block; padding: 12px; margin-bottom: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; user-select: all; overflow-wrap: anywhere; }
-#share-result-receipt[hidden], #share-result-copy[hidden] { display: none; }
-#share-result-close { background: var(--accent); color: var(--crust); }
-#share-confirm-cancel { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
-#share-confirm-open { background: var(--accent); color: var(--crust); }
 #chat-bubble {
   position: fixed; bottom: 20px; right: 20px; z-index: 50;
   width: 52px; height: 52px; border: none; border-radius: 50%;
@@ -455,7 +417,7 @@ body {
   transition: color .15s;
 }
 .panel-footer a:hover { color: var(--text); }
-/* Both icons are served from here: no request leaves for nbow.io or GitHub. */
+/* Both icons are served from here: no request leaves for the site or GitHub. */
 .panel-footer img, .panel-footer svg, .panel-footer .footer-icon { width: 14px; height: 14px; flex-shrink: 0; }
 .font-btns { display: flex; gap: 5px; }
 .font-btn {
@@ -560,7 +522,7 @@ body {
       <button class="chat-action" id="btn-download-md" disabled>Download Markdown</button>
       <button class="chat-action" id="btn-download-pdf" disabled>Download PDF</button>
     </div>
-    <p class="connection-note hosted-only">Files are processed on nbow.io in your temporary workspace and expire after 24 hours of inactivity. Download your work to keep it. Corpus sharing is optional.</p>
+    <p class="connection-note hosted-only">Files are processed on this server in your temporary workspace and expire after 24 hours of inactivity. Download your work to keep it.</p>
     <div id="status">
       <div id="dot"></div>
       <span id="status-msg">Ready</span>
@@ -624,14 +586,6 @@ body {
     <p class="connection-note">Chat includes the open Markdown, including unsaved changes. Replies can take one to three minutes. Requested edits are saved to that file.</p>
     <p id="assistant-limit" class="connection-note"></p>
 
-    <h3>Share with nbow.io</h3>
-    <p class="connection-note">Optional. Contribute this document to the public Markdown corpus for research into how technical documents are written.</p>
-    <button class="btn" id="share-open" data-share-base="__SHARE_BASE__" data-client-id="__SHARE_CLIENT__" data-client-version="1">Share with nbow.io</button>
-    <p id="share-status" class="connection-note" role="status"></p>
-    <p id="share-receipt-label" class="connection-note" hidden>Last confirmed receipt</p>
-    <code id="share-receipt" class="connection-note" hidden></code>
-    <p class="connection-note">A window opens on nbow.io. It shows you the exact text, asks you to confirm twice, and only then sends it. The file name is never sent. Three documents per hour.</p>
-
     <p class="hint">
       <kbd>Ctrl</kbd>+<kbd>S</kbd> &nbsp;Save<br>
       <kbd>Ctrl</kbd>+<kbd>Enter</kbd> &nbsp;Compile
@@ -639,48 +593,26 @@ body {
   </div>
 
   <div class="panel-footer">
-    <!-- data-legal: static/i18n.js points these at the nbow.io page in the interface language. -->
-    <a data-legal="impressum" href="https://nbow.io/en/impressum" target="_blank" rel="noopener">
-      <img src="__APP_BASE__/static/nbow.ico" alt="">
-      nbow.io &mdash; Legal notice
+    <!-- Legal pages of the site that hosts this editor; the icon is served from here. -->
+    <a href="__SITE_BASE__/impressum/" target="_blank" rel="noopener">
+      <img src="__APP_BASE__/static/icon.svg" alt="">
+      Legal notice (Impressum)
     </a>
-    <a data-legal="privacy" href="https://nbow.io/en/privacy" target="_blank" rel="noopener">
+    <a href="__SITE_BASE__/privacy/" target="_blank" rel="noopener">
       <span class="footer-icon" aria-hidden="true"></span>
       Privacy policy
     </a>
-    <a href="https://github.com/ai-nbow-n/tool-md2pdf/blob/master/NOTICE" target="_blank" rel="noopener">
+    <a href="https://github.com/nicofreeride/tool-md2pdf/blob/master/NOTICE" target="_blank" rel="noopener">
       <span class="footer-icon" aria-hidden="true"></span>
       Licence: Apache 2.0 &middot; notices
     </a>
-    <a href="https://github.com/ai-nbow-n/tool-md2pdf" target="_blank" rel="noopener">
+    <a href="https://github.com/nicofreeride/tool-md2pdf" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-      GitHub: ai-nbow-n/tool-md2pdf
+      GitHub: nicofreeride/tool-md2pdf
     </a>
   </div>
 </div>
 
-
-<dialog id="share-confirm" aria-labelledby="share-confirm-title" aria-describedby="share-confirm-body">
-  <h2 id="share-confirm-title">Share this Markdown with nbow.io?</h2>
-  <p id="share-confirm-result"></p>
-  <p id="share-confirm-body">Sharing with the research corpus is optional. Review the exact Markdown and confirm on nbow.io before it is submitted. Saving or compiling alone does not share it with the corpus.</p>
-  <p id="share-confirm-error" role="status"></p>
-  <div class="share-actions">
-    <button type="button" class="btn" id="share-confirm-cancel" autofocus>Not now</button>
-    <button type="button" class="btn" id="share-confirm-open">Review and share</button>
-  </div>
-</dialog>
-
-<dialog id="share-result" aria-labelledby="share-result-title" aria-describedby="share-result-message">
-  <h2 id="share-result-title"></h2>
-  <p id="share-result-message" role="status"></p>
-  <code id="share-result-receipt" hidden></code>
-  <p id="share-result-copy-status" role="status"></p>
-  <div class="share-actions">
-    <button type="button" class="btn" id="share-result-copy" hidden>Copy receipt</button>
-    <button type="button" class="btn" id="share-result-close" autofocus>Close</button>
-  </div>
-</dialog>
 
 <!-- EDITOR -->
 <div id="editor-pane" tabindex="-1">
@@ -894,7 +826,6 @@ async function save(silent = false) {
     if (cm.getValue() === body.content) markDirty(false);
     if (!silent) {
       setStatus("Saved", "ok");
-      window.dispatchEvent(new CustomEvent('md2pdf:share-offer', {detail: {content: body.content, action: 'save'}}));
     }
   } else if (!res.ok) setStatus(data.error || "Save failed", "err");
   return res.ok;
@@ -925,9 +856,6 @@ async function compile() {
   ).then(r => r.json());
   if (data.ok) {
     setStatus("Compiled OK", "ok"); refreshPdf();
-    if (current === filename && inDir() === directory) {
-      window.dispatchEvent(new CustomEvent('md2pdf:share-offer', {detail: {content: compiledDocument.content, action: 'compile'}}));
-    }
   }
   else {
     const tail = (data.error || data.err || data.out || "error").split("\n").filter(Boolean).slice(-2).join(" | ");
@@ -992,8 +920,6 @@ loadFiles().catch(error => setStatus(error.message, 'err'));
 </script>
 <script src="__APP_BASE__/static/files.js"></script>
 <script src="__APP_BASE__/static/chat.js"></script>
-<script src="__APP_BASE__/static/share.js"></script>
-<script src="__APP_BASE__/static/corpus-info.js"></script>
 </body>
 </html>
 """

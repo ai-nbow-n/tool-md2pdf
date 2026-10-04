@@ -1,5 +1,5 @@
 [Unit]
-Description=nbow.io Markdown editor and PDF converter
+Description=md2pdf, Markdown editor and PDF converter of instrumentainternationalia.com
 After=network.target
 
 [Service]

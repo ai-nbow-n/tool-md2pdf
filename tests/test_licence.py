@@ -1,4 +1,4 @@
-"""The licence files and the editor's legal links, which nbow.io's pages promise."""
+"""The licence files and the editor's legal links to the site that hosts it."""
 import unittest
 from pathlib import Path
 
@@ -24,9 +24,10 @@ class LicenceTests(unittest.TestCase):
     def test_editor_links_legal_notice_privacy_and_licence(self):
         with app.test_client() as client:
             html = client.get("/").get_data(as_text=True)
-        self.assertIn('data-legal="impressum"', html)
-        self.assertIn('data-legal="privacy"', html)
-        self.assertIn("tool-md2pdf/blob/master/NOTICE", html)
+        self.assertIn('href="https://instrumentainternationalia.com/impressum/"', html)
+        self.assertIn('href="https://instrumentainternationalia.com/privacy/"', html)
+        self.assertIn("nicofreeride/tool-md2pdf/blob/master/NOTICE", html)
+        self.assertIn('src="/static/icon.svg"', html)
 
 
 if __name__ == "__main__":

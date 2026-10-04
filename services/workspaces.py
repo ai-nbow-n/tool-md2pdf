@@ -45,8 +45,8 @@ def _enabled(value):
 
 
 def client_network(address):
-    """The /24 (IPv4) or /48 (IPv6) around an address, the truncation nbow.io
-    already uses for its sharing limit. Unreadable addresses share one bucket."""
+    """The /24 (IPv4) or /48 (IPv6) around an address, the truncation used for
+    the hourly limits. Unreadable addresses share one bucket."""
     try:
         ip = ipaddress.ip_address((address or "").strip())
     except ValueError:

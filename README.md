@@ -4,10 +4,10 @@ A Markdown editor that turns your documents into PDFs, with live preview, Mermai
 diagrams, several page and font styles, and an optional editing assistant that runs
 on a local language model.
 
-- **Hosted**: open it at <https://nbow.io/en/products/aiconsulting/code-agents/md2pdf/>
-  (also `/es/` and `/de/`). Your document is sent to nbow.io for conversion and kept in
-  a temporary workspace that is deleted after 24 hours of inactivity; the
-  [privacy policy](https://nbow.io/en/privacy) describes exactly what is processed.
+- **Hosted**: open it at <https://instrumentainternationalia.com/md2pdf/>. Your document
+  is sent to that server for conversion and kept in a temporary workspace that is
+  deleted after 24 hours of inactivity; the
+  [privacy notice](https://instrumentainternationalia.com/privacy/) describes exactly what is processed.
 - **On your own machine**: nothing leaves your computer except what you choose to
   share. Steps below.
 
@@ -38,5 +38,5 @@ Copyright 2026 Nicolas Gonzalez Albornoz.
 
 It ships CodeMirror and Mermaid, and Mermaid's build includes further open-source
 packages, among them ELK under the Eclipse Public License 2.0. All of them keep their own
-licences, listed with their sources in [NOTICE](NOTICE). The name "nbow" and its logo
-are not covered by the Apache License.
+licences, listed with their sources in [NOTICE](NOTICE). The name "Instrumenta Internationalia" and its
+mark (`static/icon.svg`) are not covered by the Apache License.

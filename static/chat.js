@@ -1,4 +1,4 @@
-/* Chat with the editing assistant on nbow.io's own server. There is no API key
+/* Chat with the editing assistant on the site's own server. There is no API key
    and no model choice: the server runs one model. History lives only in this
    tab's memory. */
 (() => {

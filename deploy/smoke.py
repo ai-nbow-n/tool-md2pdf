@@ -2,7 +2,7 @@
 """Check the installed hosted editor without credentials or third-party APIs.
 
 By default, contact the loopback service with the website's proxy headers.
-Use --url https://nbow.io/en/products/aiconsulting/code-agents/md2pdf/ to check
+Use --url https://instrumentainternationalia.com/md2pdf/ to check
 the public website route instead. Only new synthetic workspaces are written;
 they expire through the service's ordinary cleanup. No documents or cookies
 are printed, and existing workspaces are never selected or deleted.
@@ -64,8 +64,8 @@ class Client:
         self.headers = {"Origin": f"{parsed.scheme}://{parsed.netloc}"}
         if proxy_headers:
             self.headers.update({
-                "Host": "nbow.io",
-                "Origin": "https://nbow.io",
+                "Host": "instrumentainternationalia.com",
+                "Origin": "https://instrumentainternationalia.com",
                 "X-Forwarded-Proto": "https",
                 "X-Forwarded-Prefix": PREFIX,
             })

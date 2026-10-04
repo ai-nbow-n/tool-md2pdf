@@ -6,7 +6,7 @@ A self-contained Markdown-to-PDF tool with a browser-based editor frontend.
 Write and preview Markdown documents; compile them to PDF via a headless
 Chromium browser so Mermaid diagrams render natively. An optional chat
 assistant edits the open document with validated line edits, and the same
-application runs unchanged as a public, sandboxed editor on nbow.io.
+application runs unchanged as a public, sandboxed editor on instrumentainternationalia.com.
 
 ---
 
@@ -25,9 +25,8 @@ tool-md2pdf/
 │   └── output/                 # generated PDFs (gitignored)
 ├── docs/
 │   ├── chat.md                 # the editing assistant
-│   ├── hosting.md              # nbow.io deployment and visitor storage
-│   ├── live-chat-results.md    # live model, timeout and prompt measurements
-│   └── share.md                # the optional nbow.io corpus donation
+│   ├── hosting.md              # deployment on instrumentainternationalia.com and visitor storage
+│   └── live-chat-results.md    # live model, timeout and prompt measurements
 ├── services/
 │   ├── md2pdf.py               # CLI conversion tool (Playwright + markdown)
 │   ├── documents.py            # line edits, revision checks, atomic saves
@@ -35,11 +34,9 @@ tool-md2pdf/
 │   └── workspaces.py           # hosted sessions, per-browser workspaces, cleanup
 ├── static/
 │   ├── chat.js                 # chat UI
-│   ├── corpus-info.{js,css}    # corpus explainer beside the share button (sends nothing)
 │   ├── files.js                # browser import and Markdown/PDF downloads
 │   ├── i18n.js                 # interface translations (en/de/es)
-│   ├── nbow.ico                # footer icon, a copy of nbow.io's favicon
-│   ├── share.js                # the nbow.io sharing popup handshake
+│   ├── icon.svg                # footer icon, the II mark of Instrumenta Internationalia
 │   └── vendor/                 # CodeMirror 5.65.16, Mermaid 12.0.0 (+ licenses)
 ├── deploy/
 │   ├── install.sh              # VPS installer run by the website Actions console
@@ -114,9 +111,9 @@ print viewport and the Mermaid scaling read from it.
 
 ### Hosted website
 
-The editor also runs under `/{lang}/products/aiconsulting/code-agents/md2pdf/`
-on nbow.io. The sibling website repository proxies that path to the loopback
-Python service. Setup and systemd files are documented in [docs/hosting.md](docs/hosting.md).
+The editor also runs under `/md2pdf/` on instrumentainternationalia.com, whose
+nginx proxies that path straight to the loopback Python service with
+`X-Forwarded-Prefix /md2pdf` (the site itself is static). Setup and systemd files are documented in [docs/hosting.md](docs/hosting.md).
 `MD2PDF_HOSTED=1` requires a stable `MD2PDF_SECRET_KEY` and enables isolated,
 temporary browser workspaces. Every document path, including chat edits, must
 go through `services/workspaces.py`; never trust server directories from clients.
@@ -124,8 +121,8 @@ The hosted renderer sanitizes HTML, uses bundled Mermaid, and blocks networking.
 Desktop use remains the default. Frontend URLs must use `window.md2pdfUrl()` so
 localized paths work (in the inline template, `__APP_BASE__/static/...`).
 Browser assets are vendored in `static/vendor/`. The editor page itself loads
-nothing from another origin, so a visitor's browser contacts only nbow.io: the
-footer uses `static/nbow.ico` and an inline SVG GitHub mark (a `github.com`
+nothing from another origin, so a visitor's browser contacts only the site: the
+footer uses `static/icon.svg` and an inline SVG GitHub mark (a `github.com`
 favicon was removed for this reason). Keep new icons and fonts local too.
 
 ---
@@ -144,7 +141,7 @@ ordinary desktop use.
 | `MD2PDF_MAX_WORKSPACES` | `1000` | Capacity; over it, expired ones are swept, then HTTP 503 |
 | `MD2PDF_HOURLY_BYTES` | `104857600` | Stored-Markdown growth allowed per network per rolling hour; over it, HTTP 429 |
 | `MD2PDF_COOKIE_SECURE` | `1` | Set to `0` only for HTTP localhost testing |
-| `NBOW_SHARE_BASE` | `https://nbow.io` | Corpus popup origin *and* postMessage allowlist |
+| `MD2PDF_SITE_BASE` | `https://instrumentainternationalia.com` | Site whose legal notice and privacy page the footer links to |
 
 - A signed, essential `md2pdf_session` cookie carries a 64-hex workspace token.
   `input_directory()` and `output_directory()` refuse any client-supplied
@@ -220,31 +217,29 @@ measurements behind every budget in
 
 ---
 
-## Sharing with nbow.io (optional)
+## Live mobile verification — 2026-09-26
 
-`static/share.js` adds a **Share with nbow.io** button that contributes the open
-document to a public Markdown research corpus. Full description in
-[docs/share.md](docs/share.md); the parts worth knowing before editing the code:
+The owner confirmed **"it is working"**, with six iPhone Safari screenshots
+of the hosted editor on nbow.io (11:14–11:16). This records a successful
+manual workflow, based on the owner's report and screenshots:
 
-- **Nothing is sent from here.** The button opens a window on nbow.io and posts
-  the document to it only after that window says it is ready. Every check —
-  cookie consent, the two acknowledgements, the three-per-hour limit — happens
-  on nbow.io, because consent lives in nbow.io's storage and this app runs at
-  `localhost`, where it can neither read that state nor be believed about it.
-  Hosted conversion already processes documents on nbow.io; the sharing button
-  only governs the separate corpus donation. The client ID is `md2pdf-web` when
-  hosted and `md2pdf-desktop` locally.
-- **The file name is never sent.** `window.markdownChat.snapshot()` hands back
-  `{filename, input_dir, content, disk_revision}` and `share.js` reads only
-  `content`. That is a privacy decision, not an oversight: a file name is often
-  the most identifying thing about a document. Do not "helpfully" add it.
-- **`NBOW_SHARE_BASE`** (default `https://nbow.io`) is both the popup's origin
-  and the allowlist `share.js` checks every incoming `postMessage` against. The
-  two must stay the same value, or a window from anywhere could feed this app.
-  Set it to `http://localhost:4321` to test against a local website checkout.
-- The receipt shown under the button is the only way to have a shared document
-  deleted afterwards, so it is rendered `user-select: all` and is not cleared
-  until the next share.
+- Starting with an empty document, chat labelled `qwen3:1.7b` accepted
+  "Explain the anatomy of human neuron."
+- Busy feedback showed `Thinking` at 10 s and `Still working` at 41 s, with
+  the send button showing `Wait...`. The request subsequently completed;
+  41 s is an in-progress reading, not the measured completion time.
+- The assistant acknowledged the result, the status read
+  `Line edits saved · qwen3:1.7b · untitled.md`, and `Send` became available.
+- The editor contained the generated "Anatomy of Human Neuron" Markdown,
+  including headings, bullet lists, neuron types and a summary. It remained
+  visible after closing chat and scrolling through the document.
+- The PDF preview first showed `Compile to see preview`; a later screenshot
+  showed the formatted document rendered in the preview.
+
+This confirms the hosted empty-document chat → editor → PDF preview workflow
+on mobile. The screenshots do not establish whether compilation was automatic,
+persistence after reload, or PDF download success; no new automated test was
+run for this documentation update.
 
 ---
 
@@ -269,7 +264,6 @@ and `tests/` is deliberately not a package.
 | `test_workspaces.py` | Workspace lifecycle, cleanup, path refusals, save validation |
 | `test_llm.py` | Find/replace conversion, appending, `<document>` tag refusal, empty-document write prompt, line edits, revision conflicts, caps, busy slot, network allowance, timeouts, correction path |
 | `test_chat_ui.py` | Browser chat flow against a fake Ollama |
-| `test_share_ui.py` | Share button flows on desktop and phone profiles against a fake nbow.io popup; never reaches a live corpus |
 | `test_deploy.py` | Nginx edit targets only the website HTTPS block and is repeatable |
 
 `scripts/live_chat_smoke.py` is the only test that runs the real model: it is

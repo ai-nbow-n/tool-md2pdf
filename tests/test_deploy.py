@@ -10,12 +10,12 @@ class NginxDeploymentTests(unittest.TestCase):
   listen 443 ssl;
 }
 server {
-  server_name nbow.io www.nbow.io;
+  server_name instrumentainternationalia.com www.instrumentainternationalia.com;
   location / { proxy_pass http://localhost:4321; }
   listen 443 ssl;
 }
 server {
-  server_name nbow.io www.nbow.io;
+  server_name instrumentainternationalia.com www.instrumentainternationalia.com;
   listen 80;
   return 404;
 }
@@ -27,8 +27,8 @@ server {
         self.assertEqual(configured_site(changed), changed)
 
     def test_unexpected_layout_fails_without_producing_a_config(self):
-        for text in ('server { server_name nbow.io; }',
-                     'server {\nserver_name nbow.io www.nbow.io;\nlisten 80;\n}'):
+        for text in ('server { server_name instrumentainternationalia.com; }',
+                     'server {\nserver_name instrumentainternationalia.com www.instrumentainternationalia.com;\nlisten 80;\n}'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 configured_site(text)
 
