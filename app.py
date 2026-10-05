@@ -488,9 +488,32 @@ body {
     flex-direction: row; flex-wrap: wrap; gap: 4px 14px; padding: 8px 14px;
   }
 }
+/* Data transparency notice: a bar along the bottom, above the editor, until dismissed. */
+#storage-notice {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem;
+  padding: 0.7rem 1rem; background: var(--crust); color: var(--text);
+  border-top: 1px solid var(--border); font-size: 0.85rem; line-height: 1.4;
+}
+#storage-notice p { flex: 1 1 28rem; }
+#storage-notice code { color: var(--accent); }
+#storage-notice a { color: var(--accent); text-decoration: underline; margin-left: 0.3rem; white-space: nowrap; }
+#storage-notice button {
+  flex: 0 0 auto; padding: 0.4rem 0.9rem; border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); font: inherit; cursor: pointer;
+}
+#storage-notice button:hover { background: var(--accent); color: var(--crust); }
 </style>
 </head>
 <body data-hosted="__HOSTED__">
+
+<!-- DATA TRANSPARENCY NOTICE (hosted only). Shown until dismissed; the dismissal is kept in localStorage
+     under "md2pdf-notice". Every item named here is listed on the site's data transparency page. -->
+<div id="storage-notice" class="hosted-only" role="region" aria-label="Data transparency" hidden>
+  <p>This editor sets one strictly necessary cookie, <code>md2pdf_session</code>, which keeps your private workspace for 24 hours after your last activity, and this browser keeps two settings of yours: the language and that you have read this notice. No analytics, no cookies from other companies, nothing sent elsewhere.
+    <a id="storage-notice-link" href="__SITE_BASE__/data-transparency/" target="_blank" rel="noopener">Data transparency</a></p>
+  <button type="button" id="storage-notice-ok">Understood</button>
+</div>
 
 <!-- SETTINGS PANEL -->
 <div id="panel">
@@ -920,6 +943,7 @@ loadFiles().catch(error => setStatus(error.message, 'err'));
 </script>
 <script src="__APP_BASE__/static/files.js"></script>
 <script src="__APP_BASE__/static/chat.js"></script>
+<script src="__APP_BASE__/static/notice.js"></script>
 </body>
 </html>
 """

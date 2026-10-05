@@ -87,6 +87,15 @@ class HostedAppTests(unittest.TestCase):
             self.assertEqual(other.post("/api/llm/chat", json=body).status_code, 400)
             ollama.assert_not_called()
 
+    def test_hosted_page_declares_its_browser_storage(self):
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="storage-notice"', page)
+        self.assertIn("md2pdf_session", page)
+        self.assertIn("/data-transparency/", page)
+        self.assertIn("static/notice.js", page)
+        script = self.client.get("/static/notice.js").get_data(as_text=True)
+        self.assertIn("md2pdf-notice", script)
+
     def test_forged_server_paths_and_cross_origin_mutations_are_rejected(self):
         self.client.get("/api/files")
         outside = self.root / "outside.md"

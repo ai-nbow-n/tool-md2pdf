@@ -3,6 +3,12 @@
   const strings = {
     'Legal notice (Impressum)': ['Impressum', 'Aviso legal (Impressum)'],
     'Privacy policy': ['Datenschutzerklärung', 'Política de privacidad'],
+    'Data transparency': ['Datentransparenz', 'Transparencia de datos'],
+    'This editor sets one strictly necessary cookie,': ['Dieser Editor setzt ein unbedingt erforderliches Cookie,', 'Este editor instala una cookie estrictamente necesaria,'],
+    ', which keeps your private workspace for 24 hours after your last activity, and this browser keeps two settings of yours: the language and that you have read this notice. No analytics, no cookies from other companies, nothing sent elsewhere.': [
+      ', das Ihren privaten Arbeitsbereich 24 Stunden nach Ihrer letzten Aktivität behält; außerdem merkt sich dieser Browser zwei Einstellungen von Ihnen: die Sprache und dass Sie diesen Hinweis gelesen haben. Keine Analyse, keine Cookies anderer Unternehmen, nichts wird anderswohin gesendet.',
+      ', que conserva su espacio de trabajo privado durante 24 horas desde su última actividad; además, este navegador guarda dos ajustes suyos: el idioma y que ha leído este aviso. Sin analítica, sin cookies de otras empresas, nada se envía a otro lugar.'],
+    'Understood': ['Verstanden', 'Entendido'],
     'Licence: Apache 2.0 · notices': ['Lizenz: Apache 2.0 · Hinweise', 'Licencia: Apache 2.0 · avisos'],
     'New': ['Neu', 'Nuevo'],
     'Open Markdown': ['Markdown öffnen', 'Abrir Markdown'],
@@ -113,7 +119,7 @@
     originals.set(node, records);
     if (value !== rendered) write(rendered);
   }
-  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty'];
+  const roots = ['panel', 'fab', 'pdf-ph', 'chat-bubble', 'chat-head', 'chat-status', 'chat-form', 'chat-empty', 'storage-notice'];
   function render() {
     observer.disconnect();
     document.documentElement.lang = language;

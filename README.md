@@ -8,6 +8,9 @@ on a local language model.
   is sent to that server for conversion and kept in a temporary workspace that is
   deleted after 24 hours of inactivity; the
   [privacy notice](https://instrumentainternationalia.com/privacy/) describes exactly what is processed.
+  The editor tells you on first use what it keeps in your browser (one strictly necessary cookie and two
+  local settings: the language and that you have read the notice), and the site's
+  [data transparency page](https://instrumentainternationalia.com/data-transparency/) lists every item.
 - **On your own machine**: nothing leaves your computer except what you choose to
   share. Steps below.
 
