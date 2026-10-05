@@ -236,6 +236,7 @@ PAGE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="md2pdf-base" content="__APP_BASE__">
 <title>md2pdf</title>
+<link rel="icon" href="__APP_BASE__/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet"
   href="__APP_BASE__/static/vendor/codemirror/codemirror.min.css">
 <link rel="stylesheet"
@@ -492,9 +493,10 @@ body {
 #storage-notice {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem;
-  padding: 0.7rem 1rem; background: var(--crust); color: var(--text);
+  padding: 0.7rem 5rem 0.7rem 1rem; background: var(--crust); color: var(--text);
   border-top: 1px solid var(--border); font-size: 0.85rem; line-height: 1.4;
 }
+/* The right padding keeps the button clear of the floating chat bubble in the corner. */
 #storage-notice p { flex: 1 1 28rem; }
 #storage-notice code { color: var(--accent); }
 #storage-notice a { color: var(--accent); text-decoration: underline; margin-left: 0.3rem; white-space: nowrap; }
